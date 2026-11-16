@@ -25204,6 +25204,25 @@ var require_out4 = __commonJS({
 // src/framework.ts
 import * as fs3 from "node:fs";
 import * as path from "node:path";
+function inertiaFramework(cwd) {
+  if (!fs3.existsSync(path.join(cwd, "resources/js"))) return null;
+  try {
+    if (!/"laravel\/framework"/.test(fs3.readFileSync(path.join(cwd, "composer.json"), "utf8"))) return null;
+  } catch {
+    return null;
+  }
+  let deps = {};
+  try {
+    const pkg = JSON.parse(fs3.readFileSync(path.join(cwd, "package.json"), "utf8"));
+    deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  } catch {
+    return null;
+  }
+  if (deps["@inertiajs/vue3"] || deps["@inertiajs/vue2"] || deps["@inertiajs/inertia-vue3"]) return "vue";
+  if (deps["@inertiajs/react"] || deps["@inertiajs/inertia-react"]) return "react";
+  if (deps["@inertiajs/svelte"]) return "svelte";
+  return null;
+}
 function detectFramework(cwd) {
   const file2 = (name) => {
     try {
@@ -25212,14 +25231,14 @@ function detectFramework(cwd) {
       return "";
     }
   };
-  if (/\bsdk:\s*flutter\b/.test(file2("pubspec.yaml"))) return "flutter";
+  if (/\bsdk:\s*flutter\b/.test(file2("pubspec.yaml")) || /^ {2}flutter:\n(?: {4}.*\n)*? {4}source: sdk$/m.test(file2("pubspec.lock"))) return "flutter";
   if (/^\s*gem\s+['"]rails['"]/m.test(file2("Gemfile"))) return "rails";
-  if (/"laravel\/framework"/.test(file2("composer.json"))) return "laravel";
+  if (/"laravel\/framework"/.test(file2("composer.json"))) return inertiaFramework(cwd) ?? "laravel";
   if (fs3.existsSync(path.join(cwd, "manage.py")) || /^django\b/im.test(file2("requirements.txt")) || /["']django\b/i.test(file2("pyproject.toml"))) return "django";
   const gradle = ["build.gradle", "build.gradle.kts", "app/build.gradle", "app/build.gradle.kts", "settings.gradle", "settings.gradle.kts"].map(file2).join("\n");
   if (/com\.android\.application|android\.application/.test(gradle)) return "android";
   const xcodegen = /^targets:/m.test(file2("project.yml")) && /\bplatform:\s*\[?\s*(iOS|macOS|tvOS|watchOS|visionOS)\b/.test(file2("project.yml"));
-  if (fs3.readdirSync(cwd).some((f2) => f2.endsWith(".xcodeproj") || f2.endsWith(".xcworkspace")) || ["Package.swift", "Project.swift"].some((f2) => fs3.existsSync(path.join(cwd, f2))) || xcodegen) return "ios";
+  if (fs3.readdirSync(cwd).some((f2) => f2.endsWith(".xcodeproj") || f2.endsWith(".xcworkspace")) || ["Package.swift", "Project.swift", "Workspace.swift", "Tuist.swift"].some((f2) => fs3.existsSync(path.join(cwd, f2))) || xcodegen) return "ios";
   let deps = {};
   try {
     const pkg = JSON.parse(fs3.readFileSync(path.join(cwd, "package.json"), "utf8"));
@@ -25464,7 +25483,8 @@ function loadConfig(cwd, overrides = {}) {
   const chosen = { ...defined(fromFile), ...defined(overrides) };
   const framework = chosen.framework ?? detectFramework(cwd);
   const defaults = framework === "astro" ? { ...frameworkDefaults(framework), ...astroDefaults(astroIslands(cwd)) } : frameworkDefaults(framework);
-  const config = { ...DEFAULT_CONFIG, ...defaults, ...chosen, framework };
+  const inertia = !chosen.framework && framework !== "laravel" && inertiaFramework(cwd) === framework ? { srcDir: "resources/js", localesPath: "resources/js/locales/{locale}.json" } : {};
+  const config = { ...DEFAULT_CONFIG, ...defaults, ...inertia, ...chosen, framework };
   if (!chosen.targetLocales && !defaults.targetLocales) config.defaultLocales = true;
   if (!chosen.include && ["react", "react-native", "solid"].includes(framework) && jsxInJs(path3.join(cwd, config.srcDir), config.ignore)) config.include = [...config.include, "**/*.js"];
   config.siteUrl ??= declaredSiteUrl(cwd);
@@ -71123,7 +71143,7 @@ var init_locale_formats = __esm({
 function parseCode(code2) {
   return (0, import_parser2.parse)(code2, {
     sourceType: "module",
-    plugins: ["jsx", "typescript", "decorators-legacy"]
+    plugins: ["jsx", "typescript", "decorators-legacy", "decoratorAutoAccessors"]
   });
 }
 function parseAndScanComponent(code2, filePath, options = {}) {
@@ -71493,12 +71513,16 @@ function parseAndScanComponent(code2, filePath, options = {}) {
     TemplateLiteral(path23) {
       if (t2.isTaggedTemplateExpression(path23.parent) || consumed.has(path23.node)) return;
       const call7 = path23.parentPath;
-      const shownProse = !!call7?.isCallExpression() && call7.node.arguments[0] === path23.node && !!(messageCall(call7.node) ?? pushedMessages(call7));
+      const shown = call7?.isCallExpression() ? messageCall(call7.node) ?? pushedMessages(call7) : null;
+      const at2 = call7?.isCallExpression() ? call7.node.arguments.indexOf(path23.node) : -1;
+      const shownProse = !!shown && at2 !== -1 && at2 < (shown.messageArgs ?? 1);
       const slot = expressionSlot(path23, attributes2) ?? (shownProse ? {} : null);
       if (!slot || isIgnored(path23)) return;
       if (shownProse && !expressionSlot(path23, attributes2)) {
-        const words = path23.node.quasis.map((q) => q.value.cooked ?? "").join(" x ").trim();
-        if (!/\s/.test(words) || !new RegExp("^\\p{Lu}", "u").test(words)) return;
+        const quasis = path23.node.quasis.map((q) => q.value.cooked ?? "");
+        const words = quasis.join(" x ").trim();
+        const sentence = new RegExp("^\\p{Lu}", "u").test(words) || !quasis[0].trim() && quasis.join(" ").trim().split(/\s+/).length >= 3;
+        if (!/\s/.test(words) || !sentence) return;
       }
       const params = [];
       const plurals = path23.node.expressions.map((e2) => pluralTernary(e2));
@@ -71944,17 +71968,17 @@ function messageCall(call7) {
   };
   if (t2.isIdentifier(callee) && (SETTER.test(callee.name) || callee.name === "useState")) return { literals: strings2(call7.arguments.slice(0, 1)), prose: true };
   if (t2.isMemberExpression(callee) && t2.isIdentifier(callee.object, { name: "React" }) && t2.isIdentifier(callee.property, { name: "useState" })) return { literals: strings2(call7.arguments.slice(0, 1)), prose: true };
-  if (t2.isIdentifier(callee) && TOAST_FNS.has(callee.name)) return { literals: strings2(call7.arguments.slice(0, 2)), prose: false };
+  if (t2.isIdentifier(callee) && TOAST_FNS.has(callee.name)) return { literals: strings2(call7.arguments.slice(0, 2)), prose: false, messageArgs: 2 };
   if (t2.isMemberExpression(callee) && !callee.computed && t2.isIdentifier(callee.property)) {
     const object4 = callee.object;
     if (t2.isIdentifier(object4, { name: "Alert" }) && /^(alert|prompt)$/.test(callee.property.name)) {
       const buttons = call7.arguments[2];
       const texts = t2.isArrayExpression(buttons) ? buttons.elements.flatMap((b4) => t2.isObjectExpression(b4) ? b4.properties.filter((p) => t2.isObjectProperty(p) && t2.isIdentifier(p.key, { name: "text" }) && t2.isStringLiteral(p.value)).map((p) => p.value) : []) : [];
-      return { literals: [...strings2(call7.arguments.slice(0, 2)), ...texts], prose: false };
+      return { literals: [...strings2(call7.arguments.slice(0, 2)), ...texts], prose: false, messageArgs: 2 };
     }
     if (t2.isIdentifier(object4) && TOAST_OBJECTS.has(object4.name)) {
       if (object4.name === "window" && !/^(alert|confirm)$/.test(callee.property.name)) return null;
-      return { literals: strings2(call7.arguments.slice(0, 2)), prose: false };
+      return { literals: strings2(call7.arguments.slice(0, 2)), prose: false, messageArgs: 2 };
     }
     const root = chainRoot(callee);
     if (SCHEMA_METHODS.has(callee.property.name) && t2.isIdentifier(root) && /^(z|yup|Yup|v|zod)$/.test(root.name)) {
@@ -72134,6 +72158,14 @@ function scanConstants(ast, add, hookFor, use, report, move, imported, external)
           if (found2.reads.length || !found2.followed && literals.some((l2) => prose(normalizeWhitespace(l2.value)))) copy.set(key2, literals);
         }
       }
+      if (isList && !copy.size && !languageTagged(init2)) {
+        const items = init2.elements;
+        if (items.length > 1 && items.every((e2) => t2.isStringLiteral(e2) && new RegExp("^\\p{Lu}", "u").test(e2.value) && isTranslatable(normalizeWhitespace(e2.value)))) {
+          const found2 = follow(binding2, /* @__PURE__ */ new Set([ITEM]), true, false);
+          const asText = (p) => !!p.parentPath?.isJSXExpressionContainer() && (!!p.parentPath.parentPath?.isJSXElement() || !!p.parentPath.parentPath?.isJSXFragment());
+          if (found2.followed && found2.reads.length && found2.reads.every((r) => asText(r.path))) copy.set(ITEM, items);
+        }
+      }
       if (!copy.size) return;
       if (path23.parentPath.parentPath?.isExportNamedDeclaration() && !binding2.referencePaths.length) return;
       const { reads, followed, ignored } = follow(binding2, new Set(copy.keys()), isList, isLookup);
@@ -72296,6 +72328,7 @@ function paramNameFor(expr) {
   if (t2.isBinaryExpression(expr) && t2.isExpression(expr.left) && !t2.isNumericLiteral(expr.left)) return paramNameFor(expr.left);
   if (t2.isMemberExpression(expr) && !expr.computed && t2.isIdentifier(expr.property)) {
     if (GENERIC_PROPS.has(expr.property.name)) return "count";
+    if (expr.property.name === "value" && t2.isIdentifier(expr.object)) return expr.object.name;
     return expr.property.name;
   }
   if (t2.isOptionalMemberExpression(expr) && !expr.computed && t2.isIdentifier(expr.property)) {
@@ -192476,7 +192509,7 @@ var init_optional = __esm({
 
 // src/formats/markup.ts
 function paramName(source2, taken) {
-  const path23 = source2.trim().replace(/\.(?:length|size)$/, "");
+  const path23 = source2.trim().replace(/\.(?:toFixed|toPrecision|toString|toLocale\w*)\([\s\S]*\)$/, "").replace(/\.(?:length|size|value)$/, "");
   const last = /([A-Za-z_$][\w$]*)\s*(?:\(\s*\))?\s*$/.exec(path23)?.[1];
   let base = last && /^[A-Za-z_]\w*$/.test(last) ? last : "value";
   if (base === "t" || base === "$t" || base === "_") base = "value";
@@ -192534,11 +192567,13 @@ function buildRun(parts, opts = {}) {
       else if (ordinal && ordinals[i3] === ordinal) text5 += `{count}${ENGLISH_ORDINAL_SUFFIX[form]}`;
       else if (subAt.has(i3)) text5 += `{${subAt.get(i3).name}}`;
       else {
-        const source2 = p.source.trim();
+        const found3 = opts.money && AMOUNT.test(p.source.trim()) ? currencyAtEnd(text5, opts.money.currency) : null;
+        if (found3) text5 = text5.slice(0, -found3.symbol.length);
+        const source2 = found3 ? currencyFormat(opts.money.lang, found3.currency, p.source.trim()) : p.source.trim();
         let param = params.find((q) => q.source === source2 && !q.sub);
         if (!param) {
-          const at2 = p.at === void 0 ? void 0 : p.at + (p.source.length - p.source.trimStart().length);
-          param = { name: paramName(p.name ?? source2, taken), source: source2, ...at2 === void 0 ? {} : { at: at2 } };
+          const at2 = p.at === void 0 || found3 ? void 0 : p.at + (p.source.length - p.source.trimStart().length);
+          param = { name: paramName(p.name ?? p.source, taken), source: source2, ...at2 === void 0 ? {} : { at: at2 } };
           params.push(param);
         }
         text5 += `{${param.name}}`;
@@ -192656,12 +192691,14 @@ function richSlots(message, add) {
     return translatableAttr(inner) ? { ...slot, innerId: add(inner, { kind: "run", start: 0, end: 0, params: [], nested: true }, { element: slot.name }) } : slot;
   });
 }
-var translatableAttr, cleanAttr, IGNORED_ELEMENTS2, IGNORE_ATTRIBUTES2, INLINE_ELEMENTS;
+var AMOUNT, translatableAttr, cleanAttr, IGNORED_ELEMENTS2, IGNORE_ATTRIBUTES2, INLINE_ELEMENTS;
 var init_markup = __esm({
   "src/formats/markup.ts"() {
     "use strict";
     init_filters();
     init_scanner();
+    init_locale_formats();
+    AMOUNT = /^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)*(?:\.toFixed\(\s*\d*\s*\))?$/;
     translatableAttr = (value) => isTranslatable(normalizeWhitespace(decodeEntities(value)));
     cleanAttr = (value) => normalizeWhitespace(decodeEntities(value)).trim();
     IGNORED_ELEMENTS2 = /* @__PURE__ */ new Set(["script", "style", "code", "pre", "kbd", "samp", "noscript", "textarea"]);
@@ -192844,7 +192881,7 @@ function inlineTemplates(code2) {
   if (!/@Component\s*\(/.test(code2)) return [];
   let ast;
   try {
-    ast = (0, import_parser4.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy"], errorRecovery: true });
+    ast = (0, import_parser4.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy", "decoratorAutoAccessors"], errorRecovery: true });
   } catch {
     return [];
   }
@@ -192876,7 +192913,7 @@ function angularScript(code2, inlineTemplate, major) {
   if (!/@(Component|Injectable|Directive)\s*\(/.test(code2)) return out;
   let ast;
   try {
-    ast = (0, import_parser4.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy"], errorRecovery: true });
+    ast = (0, import_parser4.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy", "decoratorAutoAccessors"], errorRecovery: true });
   } catch {
     return out;
   }
@@ -193513,7 +193550,7 @@ var init_lit = __esm({
     init_filters();
     traverse6 = import_traverse5.default.default ?? import_traverse5.default;
     RAW = /* @__PURE__ */ new Set([...IGNORED_ELEMENTS2, "script", "style"]);
-    parseCode2 = (code2) => (0, import_parser5.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy"], errorRecovery: true });
+    parseCode2 = (code2) => (0, import_parser5.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy", "decoratorAutoAccessors"], errorRecovery: true });
     isLitTemplate = (n4) => t5.isIdentifier(n4.tag) && (n4.tag.name === "html" || n4.tag.name === "svg");
     paramObject2 = (params) => `{ ${params.map((p) => p.name === p.source ? p.name : `${p.name}: ${p.source}`).join(", ")} }`;
     call3 = (key2, params, ordinal = false) => params.length ? `t('${key2}', ${paramObject2(ordinal ? [...params, { name: "ordinal", source: "true" }] : params)})` : `t('${key2}')`;
@@ -210518,6 +210555,19 @@ function languageName2(locale) {
   }
 }
 function storeFor(config, project) {
+  const store = storeOf(config, project);
+  return {
+    ...store,
+    read: (text4, locale) => {
+      try {
+        return store.read(text4, locale);
+      } catch (e2) {
+        throw new Error(`${store.path(locale)} ${e2.message}`);
+      }
+    }
+  };
+}
+function storeOf(config, project) {
   const p = config.localesPath;
   if (p.endsWith(".xcstrings")) return xcstringsStore(p, config.sourceLocale);
   if (config.framework === "android") return androidStore(p.replace(/\/values[^/]*\/strings\.xml$/, "").replace(/\/$/, ""), config.sourceLocale);
@@ -210540,12 +210590,14 @@ var init_stores = __esm({
     encodeKey = (text4) => text4.replace(/\./g, DOT);
     decodeKey = (key2) => key2.replace(new RegExp(DOT, "g"), ".");
     json = (text4) => {
+      if (!text4?.trim()) return {};
+      let v2;
       try {
-        const v2 = text4?.trim() ? JSON.parse(text4) : {};
-        return v2 && typeof v2 === "object" && !Array.isArray(v2) ? v2 : {};
-      } catch {
-        return {};
+        v2 = JSON.parse(text4);
+      } catch (e2) {
+        throw new Error(`isn't valid JSON (${e2.message}). Fix it and run again; nothing was written to it`);
       }
+      return v2 && typeof v2 === "object" && !Array.isArray(v2) ? v2 : {};
     };
     jsonStore = (pattern) => ({
       path: (l2) => pattern.replace(/\{locale\}/g, l2),
@@ -211221,7 +211273,7 @@ function emberScript(code2) {
   if (!/\b(?:alert|confirm|prompt|toast|notify)\s*\(|document\.title/.test(script)) return out;
   let ast;
   try {
-    ast = (0, import_parser8.parse)(script, { sourceType: "module", plugins: ["typescript", "decorators-legacy"], errorRecovery: true });
+    ast = (0, import_parser8.parse)(script, { sourceType: "module", plugins: ["typescript", "decorators-legacy", "decoratorAutoAccessors"], errorRecovery: true });
   } catch {
     return out;
   }
@@ -212384,6 +212436,7 @@ async function scanVue(code2, filePath, opts) {
           open: code2.slice(c.loc.start.offset, first.loc.start.offset),
           close: code2.slice(last.loc.end.offset, c.loc.end.offset),
           text: code2.slice(first.loc.start.offset, last.loc.end.offset),
+          at: first.loc.start.offset,
           ...nested ? { nested } : {}
         });
         text4 += `{${name}}`;
@@ -212393,18 +212446,18 @@ async function scanVue(code2, filePath, opts) {
     if (!isTranslatable(message.replace(/\{\w+\}/g, " "))) return null;
     return { message, slots, significant };
   };
-  const register = (built) => built.slots.map(({ nested, ...slot }) => {
+  const register = (built) => built.slots.map(({ nested, at: at2, ...slot }) => {
     if (nested) {
       const slots = register(nested);
       const innerRichId = `str_${n4 + 1}`;
-      add(nested.message, { kind: "rich", start: 0, end: 0, params: slots.map((x) => ({ name: x.name, source: x.source ?? x.name })), slots, nested: true }, { element: slot.name });
+      add(nested.message, { kind: "rich", start: 0, end: 0, params: slots.map((x) => ({ name: x.name, source: x.source ?? x.name })), slots, nested: true }, { element: slot.name, ...at2 === void 0 ? {} : { loc: lineOf(code2, at2) } });
       return { ...slot, innerRichId };
     }
     if (slot.text === void 0) return slot;
     const inner = normalizeWhitespace(decodeEntities(slot.text)).trim();
     if (!isTranslatable(inner)) return slot;
     const innerId = `str_${n4 + 1}`;
-    add(inner, { kind: "run", start: 0, end: 0, params: [], nested: true }, { element: slot.name });
+    add(inner, { kind: "run", start: 0, end: 0, params: [], nested: true }, { element: slot.name, ...at2 === void 0 ? {} : { loc: lineOf(code2, at2) } });
     return { ...slot, innerId };
   });
   const rich = (children, element3) => {
@@ -212453,7 +212506,7 @@ async function scanVue(code2, filePath, opts) {
     return true;
   };
   const runSite = (parts, element3) => {
-    const run = buildRun(parts, { counts: true, ordinals: true, values: true });
+    const run = buildRun(parts, { counts: true, ordinals: true, values: true, money: opts.money });
     if (!run) {
       for (const p of parts) if (p.kind === "expr" && p.at !== void 0 && !readSite(p.source, p.at)) expressionLiterals(p.source, p.at).forEach((l2) => literal5(l2, "template"));
     }
@@ -212656,13 +212709,17 @@ var init_vue = __esm({
 // src/formats/svelte.ts
 var svelte_exports = {};
 __export(svelte_exports, {
+  blankStyles: () => blankStyles,
   scanSvelte: () => scanSvelte,
   svelteAdapter: () => svelteAdapter,
   transformSvelte: () => transformSvelte
 });
+function blankStyles(code2) {
+  return code2.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/g, (_2, open3, body, close2) => open3 + body.replace(/[^\n]/g, " ") + close2);
+}
 async function scanSvelte(code2, filePath, opts) {
   const { parse: parse21 } = await loadOptional("svelte/compiler");
-  const ast = parse21(code2);
+  const ast = parse21(blankStyles(code2));
   const strings2 = [];
   const warnings2 = [];
   const sites = /* @__PURE__ */ new Map();
@@ -213960,6 +214017,19 @@ var init_text_ranges = __esm({
 // src/rtl.ts
 import * as fs8 from "node:fs";
 import * as path7 from "node:path";
+function markRightToLeft(value, locale) {
+  if (!isRtl(locale)) return value;
+  const one = (text4) => {
+    if (text4.startsWith("\u200F") || !RTL_LETTER.test(text4) || /\{\s*[\w$.]+\s*,/.test(text4)) return text4;
+    for (const m2 of text4.replace(/<[^>]*>/g, "").matchAll(new RegExp("\\{([\\w$.]+)\\}|\\p{L}", "gu"))) {
+      if (m2[1] === "count") continue;
+      return m2[1] !== void 0 || !RTL_LETTER.test(m2[0]) ? `\u200F${text4}` : text4;
+    }
+    return text4;
+  };
+  if (typeof value === "string") return one(value);
+  return Object.fromEntries(Object.entries(value).map(([k, v2]) => [k, typeof v2 === "string" ? one(v2) : v2]));
+}
 function cssInScript(text4) {
   if (!/`/.test(text4)) return [];
   const out = [];
@@ -214018,7 +214088,7 @@ async function findPhysicalStyles(cwd, srcDir) {
   }
   return out;
 }
-var import_fast_glob4, RTL_LANGUAGES, RTL_SCRIPTS, isRtl, TAILWIND_SAFE, TAILWIND_REPORT, CSS_SAFE, CSS_REPORT, STYLES, MARKUP, SCRIPTS, CSS_IN_JS, IGNORE, CLASS_STRINGS;
+var import_fast_glob4, RTL_LANGUAGES, RTL_SCRIPTS, isRtl, RTL_LETTER, TAILWIND_SAFE, TAILWIND_REPORT, CSS_SAFE, CSS_REPORT, STYLES, MARKUP, SCRIPTS, CSS_IN_JS, IGNORE, CLASS_STRINGS;
 var init_rtl = __esm({
   "src/rtl.ts"() {
     "use strict";
@@ -214032,6 +214102,7 @@ var init_rtl = __esm({
       if (script) return RTL_SCRIPTS.test(script[0].toUpperCase() + script.slice(1).toLowerCase());
       return RTL_LANGUAGES.includes(language.toLowerCase());
     };
+    RTL_LETTER = /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Adlam}\p{Script=Hanifi_Rohingya}]/u;
     TAILWIND_SAFE = [
       [/^(-?)ml-/, "$1ms-"],
       [/^(-?)mr-/, "$1me-"],
@@ -216471,8 +216542,13 @@ var init_setup_frameworks = __esm({
     init_seo();
     toPosix = (p) => p.split(path8.sep).join("/");
     GENERATED = "Generated by localize.dev";
-    SELF_VERSION = true ? "0.35.2" : "0.6.0";
-    isGenerated = (code2) => /Generated by localize\.dev/i.test(code2);
+    SELF_VERSION = true ? "0.35.3" : "0.6.0";
+    isGenerated = (code2) => {
+      for (const m2 of code2.matchAll(/Generated by localize\.dev/gi)) {
+        if ((code2.slice(0, m2.index).match(/(?<!\\)`/g)?.length ?? 0) % 2 === 0) return true;
+      }
+      return false;
+    };
     VUE_I18N = { "vue-i18n": "^11.1.0" };
     SVELTE_I18N = { "svelte-i18n": "^4.0.1" };
     NUXT_I18N = { "@nuxtjs/i18n": "^10.0.0" };
@@ -218290,7 +218366,7 @@ function planNativeSwitcher(ctx) {
       " */",
       "import { useState } from 'react';",
       `import { FlatList, Modal, Pressable, StyleSheet, Text, View${T(", type StyleProp, type TextStyle, type ViewStyle")} } from 'react-native';`,
-      `import { useLanguage as useBaseLanguage${T(", type LanguageInfo, type UseLanguageOptions")} } from 'localize-dev/react';`,
+      `import { LANGUAGE_LABELS, useLanguage as useBaseLanguage${T(", type LanguageInfo, type UseLanguageOptions")} } from 'localize-dev/react';`,
       "",
       "/** The current language and setLanguage(), on react-i18next. */",
       `export function useLanguage(options${T(": UseLanguageOptions")} = {}) {`,
@@ -218306,7 +218382,8 @@ function planNativeSwitcher(ctx) {
       "  const [open, setOpen] = useState(false);",
       "  return (",
       "    <>",
-      '      <Pressable accessibilityRole="button" accessibilityLabel={`Language: ${info.nativeName}`} onPress={() => setOpen(true)} style={[styles.button, style]}>',
+      // The button's name in the current language ("Idioma: Español"), as the web switcher says it.
+      "      <Pressable accessibilityRole=\"button\" accessibilityLabel={`${LANGUAGE_LABELS[info.code.split('-')[0]] ?? LANGUAGE_LABELS.en}: ${info.nativeName}`} onPress={() => setOpen(true)} style={[styles.button, style]}>",
       "        <Text style={textStyle}>{`${info.flag} ${nameOf(info, nameStyle)}`.trim()}</Text>",
       "      </Pressable>",
       '      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>',
@@ -219373,7 +219450,7 @@ async function planSetup(opts, result, changed, out) {
     return result;
   }
   if (pkg && pkgText) {
-    const wanted = { ...I18N_PACKAGES, ...config.interpolation === "icu" ? ICU_PACKAGES : {} };
+    const wanted = { ...I18N_PACKAGES, ...config.interpolation === "icu" ? ICU_PACKAGES : {}, ...config.framework === "react-native" ? NATIVE_PACKAGES : {} };
     for (const [name, range] of Object.entries(wanted)) if (!deps[name]) result.addedDependencies[name] = range;
     if (Object.keys(result.addedDependencies).length) {
       const merged = { ...pkg.dependencies, ...result.addedDependencies };
@@ -219431,6 +219508,7 @@ async function planSetup(opts, result, changed, out) {
     entries.push(`  ${name}: { translation: ${id3} },`);
   }
   const icu = config.interpolation === "icu";
+  const reactNative = config.framework === "react-native";
   const entry = routerApp?.root ?? findEntry(cwd, config, changed);
   const quote3 = prefersDoubleQuotes(entry ? readText(cwd, entry, changed) : opts.files[0]?.content ?? "") ? (code3) => code3.replace(/'/g, '"') : (code3) => code3;
   out(
@@ -219439,11 +219517,12 @@ async function planSetup(opts, result, changed, out) {
       "import i18n from 'i18next';",
       ...icu ? ["import ICU from 'i18next-icu';"] : [],
       "import { initReactI18next } from 'react-i18next';",
+      ...reactNative ? ["import AsyncStorage from '@react-native-async-storage/async-storage';"] : [],
       ...config.framework === "react-native" && config.targetLocales.some(isRtl) ? ["import { I18nManager } from 'react-native';"] : [],
       ...imports2,
       "",
       `// Generated by localize.dev. ${lazy ? "The source language is bundled, the rest load when first used" : "Every locale is bundled"}; the language comes from a saved choice`,
-      `// (localStorage "lang"), then the device language, then ${config.sourceLocale}.`,
+      `// (${reactNative ? "kept on the device with AsyncStorage" : "localStorage"} "lang"), then the device language, then ${config.sourceLocale}.`,
       "export const resources = {",
       ...entries,
       "};",
@@ -219464,7 +219543,7 @@ async function planSetup(opts, result, changed, out) {
         "  },",
         "};"
       ] : [`${router ? "export " : ""}const supported = Object.keys(resources);`],
-      "const saved = typeof localStorage === 'undefined' ? null : localStorage.getItem('lang');",
+      ...reactNative ? [] : ["const saved = typeof localStorage === 'undefined' ? null : localStorage.getItem('lang');"],
       "// The visitor languages in order (Intl on React Native, where navigator has none): matched",
       "// exactly (pt-BR), by language (pt-BR \u2192 pt), or to a regional variant the app has (pt \u2192 pt-BR).",
       "const devices = [...(typeof navigator !== 'undefined' && navigator.languages ? navigator.languages : []), typeof navigator !== 'undefined' ? navigator.language : undefined, typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().locale : undefined];",
@@ -219475,7 +219554,7 @@ async function planSetup(opts, result, changed, out) {
       "  .init({",
       "    resources,",
       ...lazy ? ["    partialBundledLanguages: true,", "    supportedLngs: supported, // every language, loaded or not: the language menu lists these", "    react: { useSuspense: false }, // shows the source language until a file arrives"] : [],
-      ssr ? `    lng: (typeof document !== 'undefined' && supported.includes(document.documentElement.lang) ? document.documentElement.lang : undefined) ?? '${config.sourceLocale}',` : `    lng: (saved && supported.includes(saved) ? saved : undefined) ?? device ?? '${config.sourceLocale}',`,
+      ssr ? `    lng: (typeof document !== 'undefined' && supported.includes(document.documentElement.lang) ? document.documentElement.lang : undefined) ?? '${config.sourceLocale}',` : reactNative ? `    lng: device ?? '${config.sourceLocale}',` : `    lng: (saved && supported.includes(saved) ? saved : undefined) ?? device ?? '${config.sourceLocale}',`,
       `    fallbackLng: '${config.sourceLocale}',`,
       "    interpolation: { escapeValue: false }, // React already escapes",
       "  });",
@@ -219508,13 +219587,21 @@ async function planSetup(opts, result, changed, out) {
         `const RTL = ${JSON.stringify(RTL_LANGUAGES).replace(/"/g, "'").replace(/,/g, ", ")};`,
         `const applyDirection = (lng${/\.tsx?$/.test(i18nFile) ? ": string" : ""}) => {`,
         "  const rtl = RTL.includes(lng.split('-')[0]);",
-        "  if (I18nManager.isRTL !== rtl) {",
-        "    I18nManager.allowRTL(rtl);",
-        "    I18nManager.forceRTL(rtl);",
-        "  }",
+        "  // Set every time, even when this start already matches: a saved choice restored after the",
+        "  // device language must win over it.",
+        "  I18nManager.allowRTL(rtl);",
+        "  I18nManager.forceRTL(rtl);",
         "};",
         "i18n.on('languageChanged', applyDirection);",
         "applyDirection(i18n.language);",
+        ""
+      ] : [],
+      ...reactNative ? [
+        "/** The language picked last time, then every change from now on, kept on the device. */",
+        "AsyncStorage.getItem('lang')",
+        "  .then((saved) => (saved && supported.includes(saved) && saved !== i18n.language ? i18n.changeLanguage(saved) : undefined))",
+        "  .catch(() => {}) // No storage (a bare app before pod install): the device language.",
+        "  .finally(() => i18n.on('languageChanged', (lng) => void AsyncStorage.setItem('lang', lng).catch(() => {})));",
         ""
       ] : [],
       ...ssr && !router ? [
@@ -219539,6 +219626,9 @@ async function planSetup(opts, result, changed, out) {
   addSwitcher({ cwd, config, changed, out, result, next: false, moduleFile: i18nFile, sample: entry ? readText(cwd, entry, changed) : opts.files[0]?.content ?? "", dir: routerApp ? "app/" : void 0 });
   if (config.framework === "react-native" && config.targetLocales.some(isRtl)) {
     result.notes.push("React Native: switching to or from a right-to-left language flips the layout on the next app start; restart it then (expo-updates reloadAsync, or react-native-restart).");
+  }
+  if (reactNative && result.addedDependencies["@react-native-async-storage/async-storage"]) {
+    result.notes.push("React Native: the chosen language is kept with @react-native-async-storage/async-storage. In Expo, `npx expo install --fix` picks the version your SDK expects; in a bare app, run `npx pod-install` after installing.");
   }
   if (typescript) enableJsonImports(cwd, changed, out);
   if (!entry) {
@@ -220143,7 +220233,7 @@ function mergeFiles(files, extra) {
   for (const f2 of extra) byPath.set(repoPath(f2.path), { ...f2, path: repoPath(f2.path) });
   return [...byPath.values()];
 }
-var import_fast_glob10, t9, I18N_PACKAGES, ICU_PACKAGES, toPosix2, I18NEXT_INIT, sameJson, isPlainObject, NOT_SOURCE, ENTRY_NAMES, EXTS2, SELF_VERSION2, isLegacySwitcher, LOCKFILES, LOCK_ONLY;
+var import_fast_glob10, t9, I18N_PACKAGES, NATIVE_PACKAGES, ICU_PACKAGES, toPosix2, I18NEXT_INIT, sameJson, isPlainObject, NOT_SOURCE, ENTRY_NAMES, EXTS2, SELF_VERSION2, isLegacySwitcher, LOCKFILES, LOCK_ONLY;
 var init_setup = __esm({
   "src/setup.ts"() {
     "use strict";
@@ -220164,6 +220254,9 @@ var init_setup = __esm({
       i18next: "^26.5.0",
       "react-i18next": "^17.1.0"
     };
+    NATIVE_PACKAGES = {
+      "@react-native-async-storage/async-storage": "^2.2.0"
+    };
     ICU_PACKAGES = {
       "i18next-icu": "^2.6.0",
       "intl-messageformat": "^12.1.0"
@@ -220175,7 +220268,7 @@ var init_setup = __esm({
     NOT_SOURCE = ["**/node_modules/**", "**/*.d.ts", "**/{dist,build,out,coverage,.next,.react-router,.svelte-kit,.output,.astro,.vercel,.netlify}/**"];
     ENTRY_NAMES = ["main", "index"].flatMap((n4) => ["tsx", "jsx", "ts", "js"].map((e2) => `${n4}.${e2}`));
     EXTS2 = ["tsx", "jsx", "ts", "js"];
-    SELF_VERSION2 = true ? "0.35.2" : "0.6.0";
+    SELF_VERSION2 = true ? "0.35.3" : "0.6.0";
     isLegacySwitcher = (code2) => isGenerated(code2) && code2.includes("function nameOf(") && code2.includes("<select") && !code2.includes("localize-dev/react");
     LOCKFILES = { npm: "package-lock.json", pnpm: "pnpm-lock.yaml", yarn: "yarn.lock", bun: "bun.lock" };
     LOCK_ONLY = {
@@ -221151,6 +221244,14 @@ function catalogLocales(catalog, sourceLocale, wanted) {
   const unsupported = locales2.flatMap((l2) => catalog.unsupported?.(l2) ? [`${catalog.file}: ${catalog.unsupported(l2)}.`] : []);
   return { locales: locales2.filter((l2) => !catalog.unsupported?.(l2)), unsupported };
 }
+function assertJson(file2, text4) {
+  if (!/\.(json|arb)$/.test(file2) || !text4?.trim()) return;
+  try {
+    JSON.parse(text4);
+  } catch (e2) {
+    throw new Error(`${file2} isn't valid JSON (${e2.message}). Fix it and run again; nothing was translated or written.`);
+  }
+}
 function missingIn(catalog, locales2, current2, outdated) {
   const missing = /* @__PURE__ */ new Map();
   for (const locale of locales2) {
@@ -221236,6 +221337,7 @@ async function translateFiles(opts) {
     const sourceLocale = catalog.sourceLocale ?? opts.sourceLocale;
     const { locales: locales2, unsupported } = catalogLocales(catalog, sourceLocale, wanted);
     notes.push(...unsupported);
+    for (const locale of locales2) assertJson(catalog.targetFile(locale), current2(catalog.targetFile(locale)));
     const outdated = new Set(outdatedKeys(lock, catalog));
     const missing = missingIn(catalog, locales2, current2, outdated);
     summary2.push({ file: catalog.file, label: catalog.label, locales: locales2, missing: missing.size, outdated: outdated.size });
@@ -221316,7 +221418,7 @@ async function translateFiles(opts) {
           retry.push({ plan: job.plan, request: job.strings.find((r) => r.id === m2.id), entry, locale, problem });
           continue;
         }
-        const value = entry.masked.restore(raw);
+        const value = entry.masked.restore(markRightToLeft(raw, locale));
         if (value === null) {
           warnings2.push(`${job.plan.catalog.file}: dropped the ${locale} translation of "${entry.key}": its placeholders don't match the source (added, or unnamed ones reordered).`);
           continue;
@@ -221352,7 +221454,7 @@ async function translateFiles(opts) {
         const m2 = answers.get(r.request.id);
         const raw = m2?.plurals?.[r.locale] ? m2.plurals[r.locale] : m2?.translations[r.locale];
         const problem = translationProblem(r.entry.masked.value, raw, r.locale, { syntax: syntaxOf(plan.catalog) });
-        const value = problem ? null : r.entry.masked.restore(raw);
+        const value = problem ? null : r.entry.masked.restore(markRightToLeft(raw, r.locale));
         const plural = typeof r.entry.masked.value !== "string";
         if (value === null && r.empty && (!raw || plural && typeof raw === "string")) {
           warnings2.push(`${plan.catalog.file}: no ${r.locale} ${plural ? "plural forms" : "translation"} came back for "${displayKey(r.entry.key)}"; run translate again, or add it by hand.`);
@@ -221473,6 +221575,7 @@ var init_sync = __esm({
     init_placeholders();
     init_lock();
     init_validate();
+    init_rtl();
     FORMATS = [jsonFormat, textKeyedJsonFormat, yamlFormat, poFormat, arbFormat, androidFormat, ...appleFormats, chromeFormat];
     PATTERNS = ["**/*.{json,yml,yaml,po,arb,xcstrings}", "**/res/values*/*.xml", "**/composeResources/values*/*.xml", "**/*.lproj/*.strings", "**/_locales/*/messages.json"];
     IGNORE3 = [
@@ -221516,9 +221619,10 @@ function qwikHead(cwd, config) {
 function linesAsWritten(changes, original) {
   const from = /* @__PURE__ */ new Map();
   return changes.map((c) => {
-    const at2 = original.indexOf(c.before, from.get(c.before) ?? 0);
+    const before2 = original.includes(c.before) ? c.before : [...c.before.matchAll(/(?:toLocale\w*|Intl\.\w+Format)\([^,)]*/g)].map((m2) => m2[0]).find((f2) => original.includes(f2)) ?? c.before;
+    const at2 = original.indexOf(before2, from.get(before2) ?? 0);
     if (at2 === -1) return c;
-    from.set(c.before, at2 + 1);
+    from.set(before2, at2 + 1);
     return { ...c, line: original.slice(0, at2).split("\n").length };
   });
 }
@@ -221526,6 +221630,9 @@ function moneyOptions(cwd, config) {
   if (config.localizeFormats === false || !(!config.framework || config.framework === "react" || config.framework === "react-native" || config.framework === "solid")) return void 0;
   if (nextAppRouter(cwd, config)) return void 0;
   return { lang: config.framework === "solid" ? "i18n.language" : "i18next.language", currency: config.currency };
+}
+function templateMoney(config) {
+  return config.localizeFormats !== false && config.framework === "vue" ? { lang: "$i18n.locale", currency: config.currency } : void 0;
 }
 function formatLang2(cwd, config) {
   return config.localizeFormats !== false && nextAppRouter(cwd, config) ? "i18n.language" : void 0;
@@ -221568,7 +221675,7 @@ async function scanProject(cwd, config, log) {
     const adapter = await adapterFor(file2, config.framework);
     if (adapter) {
       try {
-        const result = await adapter.scan(code2, file2, { attributes: config.attributes, ...richOptions(cwd, config, file2) });
+        const result = await adapter.scan(code2, file2, { attributes: config.attributes, ...richOptions(cwd, config, file2), money: templateMoney(config) });
         warnings2.push(...result.warnings);
         if (result.strings.length) scanned.push({ file: file2, code: code2, strings: result.strings, server: false });
       } catch (err) {
@@ -221704,6 +221811,15 @@ function richOptions(cwd, config, file2) {
   if (!spec2.startsWith(".")) spec2 = `./${spec2}`;
   return { richModule: spec2, ...svelteMajor(cwd) < 5 ? { richSlots: true } : {} };
 }
+function hasTestRunner(cwd) {
+  try {
+    const pkg = JSON.parse(fs18.readFileSync(path18.join(cwd, "package.json"), "utf8"));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    return "vitest" in deps || "jest" in deps;
+  } catch {
+    return false;
+  }
+}
 async function runPipeline(opts) {
   const { cwd, config, translator, log } = opts;
   const { filesScanned, scanned, warnings: warnings2 } = await scanProject(cwd, config, log);
@@ -221819,6 +221935,8 @@ async function runPipeline(opts) {
   const set3 = (dict2, key2, value, where) => guard(() => setNested(dict2, key2, value), where);
   for (const { file: file2, code: code2, strings: strings2, server, makeClient, keep, copyModule, importedCopy } of scanned) {
     const keys = /* @__PURE__ */ new Map();
+    const inFile = /* @__PURE__ */ new Map();
+    const names3 = (s) => ACCESSIBLE_NAMES.has(s.attributeName ?? "");
     const selectBase = /* @__PURE__ */ new Map();
     const ordered = [...strings2].sort((a, b4) => Number(!!a.select && a.select.value !== null) - Number(!!b4.select && b4.select.value !== null));
     const plainKeys = new Set(
@@ -221836,7 +221954,8 @@ async function runPipeline(opts) {
         const same3 = keysByText.get(s.originalText)?.find(
           (k) => translationsAgree(Object.fromEntries([...targets].map(([l2, t10]) => [l2, getNested(t10.dict, k)])), fresh)
         );
-        if (same3) registry.alias(mid, same3);
+        const named2 = same3 ?? inFile.get(s.originalText)?.find((e2) => names3(s) || e2.name)?.key;
+        if (named2) registry.alias(mid, named2);
       }
       const base = variant && selectBase.has(variant.group) ? `${selectBase.get(variant.group)}_${variant.value}` : s.fixedKey ?? (store.textKeys ? textKeyOf(s) : mapping?.key ?? fallbackKey(file2, s.originalText));
       let proposed = s.keySuffix && !base.endsWith(s.keySuffix) ? `${base}${s.keySuffix}` : base;
@@ -221844,6 +221963,7 @@ async function runPipeline(opts) {
       const { key: key2, isNew } = s.fixedKey && registry.has(s.fixedKey) ? { key: s.fixedKey, isNew: false } : registry.register(proposed, s.fixedKey ? `${mid}\0${s.fixedKey}` : mid);
       if (s.select && s.select.value === null) selectBase.set(s.select.group, key2);
       if (isNew && !s.plural) keysByText.set(s.originalText, [...keysByText.get(s.originalText) ?? [], key2]);
+      if (!s.plural && !variant) inFile.set(s.originalText, [...inFile.get(s.originalText) ?? [], { key: key2, name: names3(s) }]);
       const write3 = (dict2, value, where) => typeof value === "string" ? set3(dict2, key2, toDictFormat(value, config.interpolation), where) : guard(() => writePlural(dict2, key2, value, config.interpolation, !!s.plural?.ordinal), where);
       if (isNew) {
         if (!write3(sourceDict, s.plural ?? s.originalText, sourcePath)) continue;
@@ -221854,7 +221974,8 @@ async function runPipeline(opts) {
       keys.set(s.id, key2);
       if (s.stateDefault && !keep) stateDefaults.push({ file: file2, line: s.loc.line, text: s.originalText, key: key2 });
       for (const [locale, target] of targets) {
-        const value = s.plural ? withZero(mapping?.plurals?.[locale], s.plural, byText.get(`${translationId}\0=0`)?.translations[locale]) : mapping?.translations[locale];
+        const raw = s.plural ? withZero(mapping?.plurals?.[locale], s.plural, byText.get(`${translationId}\0=0`)?.translations[locale]) : mapping?.translations[locale];
+        const value = raw && markRightToLeft(raw, locale);
         const present = s.plural ? hasPlural(target.dict, key2, config.interpolation, !!s.plural?.ordinal) : getNested(target.dict, key2) !== void 0;
         if (value && (typeof value === "string" || value.other) && !present && write3(target.dict, value, target.path)) {
           stats.translations[locale] = (stats.translations[locale] ?? 0) + 1;
@@ -221894,7 +222015,8 @@ async function runPipeline(opts) {
       ...config.framework === "astro" ? { astroModule: relativeImport(file2, astroModulePath(cwd, config)).replace(/\/index$/, "") } : {},
       ...config.framework === "lit" ? { litModule: relativeImport(file2, solidModulePath(cwd, config)) } : {},
       ...config.framework === "android" ? { androidNamespace: androidNamespace(cwd) } : {},
-      ...richOptions(cwd, config, file2)
+      ...richOptions(cwd, config, file2),
+      money: templateMoney(config)
     }) : transformComponent(code2, file2, keys, {
       attributes: config.attributes,
       sourceLocale: config.sourceLocale,
@@ -221974,6 +222096,9 @@ ${result.code}`;
       setup.files.push(attributes2);
       setup.notes.push(`Locale files now merge key by key: run this once per clone (and in CI before merging) so git uses it: ${MERGE_DRIVER_SETUP}`);
     }
+  }
+  if (opts.setup !== false && hasTestRunner(cwd) && files.some((f2) => f2.content.includes("\\u2066") && !(fileText(f2.path) ?? "").includes("\\u2066"))) {
+    setup.notes.push("Prices are now wrapped in invisible isolate characters (\\u2066\u2026\\u2069) that keep them in order in right-to-left text: a test matching an exact text like 'Total: $48.00' needs a regex instead, such as /Total: .\\$48\\.00./.");
   }
   const allFiles = mergeFiles(files, setup.files).filter((f2) => {
     const abs = path18.join(cwd, f2.path);
@@ -222101,7 +222226,7 @@ async function refreshOutdated(o) {
     vuePlurals: vuePluralsIn2(o.cwd, o.config.interpolation)
   });
 }
-var import_fast_glob14, USE_CLIENT2, duration, toPosix3, BATCH_SIZE, CONCURRENCY, EMAIL_LIBRARIES, isEmailTemplate;
+var import_fast_glob14, USE_CLIENT2, duration, toPosix3, BATCH_SIZE, CONCURRENCY, EMAIL_LIBRARIES, isEmailTemplate, ACCESSIBLE_NAMES;
 var init_pipeline = __esm({
   "src/pipeline.ts"() {
     "use strict";
@@ -222126,6 +222251,7 @@ var init_pipeline = __esm({
     init_stores();
     init_dart();
     init_paths();
+    init_rtl();
     USE_CLIENT2 = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*(['"])use client\1/;
     duration = (ms) => {
       const s = Math.round(ms / 1e3);
@@ -222136,6 +222262,7 @@ var init_pipeline = __esm({
     CONCURRENCY = 2;
     EMAIL_LIBRARIES = /^(?:react-email|@react-email\/|jsx-email|mjml-react|@faire\/mjml-react)/;
     isEmailTemplate = (code2) => importSpecifiers(code2).some((s) => EMAIL_LIBRARIES.test(s));
+    ACCESSIBLE_NAMES = /* @__PURE__ */ new Set(["aria-label", "accessibilityLabel"]);
   }
 });
 
@@ -223728,11 +223855,12 @@ function buildPrTitle(result, branch) {
 function filledCount(result) {
   return (result.filled ?? []).reduce((n4, f2) => ({ filled: n4.filled + f2.keys.length, redone: n4.redone + f2.redone.length }), { filled: 0, redone: 0 });
 }
+var HEADING = "## \u{1F30D} [localize.dev](https://uselocalize.dev/?utm_source=github&utm_medium=pr)";
 function buildPrBody(result, targetLocales) {
   const { stats } = result;
   if (!stats.stringsReplaced && !stats.formatsLocalized && result.setup.switcherFile) {
     return [
-      "## \u{1F30D} localize.dev",
+      HEADING,
       "",
       `Adds \`<LanguageSwitcher />\` in \`${result.setup.switcherFile}\`: a menu of every bundled language, each in its own name.`,
       "Render it where people pick a language, such as your header. No strings changed in this run."
@@ -223741,7 +223869,7 @@ function buildPrBody(result, targetLocales) {
   const translations = Object.values(stats.translations).reduce((n4, c) => n4 + c, 0);
   const keys = stats.stringsReplaced || stats.newKeys || translations;
   const lines = [
-    "## \u{1F30D} localize.dev",
+    HEADING,
     "",
     ...stats.stringsReplaced || stats.newKeys ? [`Extracted **${stats.stringsReplaced}** hardcoded UI string(s) into translation keys (${stats.newKeys} new, ${stats.reusedKeys} reused).`, ""] : !keys && stats.formatsLocalized ? [`No new strings in this run; ${stats.formatsLocalized} date, number or money format(s) now follow the app's language.`, ""] : [],
     ...result.incomplete ? [
@@ -223809,7 +223937,7 @@ function buildPrBody(result, targetLocales) {
 function buildTranslatePrBody(result) {
   const locales2 = Object.keys(result.stats.translations).sort();
   const lines = [
-    "## \u{1F30D} localize.dev",
+    HEADING,
     "",
     `Filled in **${result.stats.strings}** missing translation(s) in ${result.files.length} file(s). Existing translations and code are unchanged.`,
     "",
