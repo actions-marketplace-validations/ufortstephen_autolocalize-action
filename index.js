@@ -192509,7 +192509,7 @@ var init_optional = __esm({
 
 // src/formats/markup.ts
 function paramName(source2, taken) {
-  const path23 = source2.trim().replace(/\.(?:toFixed|toPrecision|toString|toLocale\w*)\([\s\S]*\)$/, "").replace(/\.(?:length|size|value)$/, "");
+  const path23 = source2.trim().replace(/\.(?:toFixed|toPrecision|toString|toStringAsFixed|toLocale\w*)\([\s\S]*\)$/, "").replace(/\.(?:length|size|value)$/, "");
   const last = /([A-Za-z_$][\w$]*)\s*(?:\(\s*\))?\s*$/.exec(path23)?.[1];
   let base = last && /^[A-Za-z_]\w*$/.test(last) ? last : "value";
   if (base === "t" || base === "$t" || base === "_") base = "value";
@@ -192569,11 +192569,18 @@ function buildRun(parts, opts = {}) {
       else {
         const found3 = opts.money && AMOUNT.test(p.source.trim()) ? currencyAtEnd(text5, opts.money.currency) : null;
         if (found3) text5 = text5.slice(0, -found3.symbol.length);
-        const source2 = found3 ? currencyFormat(opts.money.lang, found3.currency, p.source.trim()) : p.source.trim();
+        const fixed = found3 ? /^([\s\S]+?)\.(?:toFixed|toStringAsFixed)\(\s*(\d*)\s*\)$/.exec(p.source.trim()) : null;
+        const lang = opts.money?.lang;
+        const source2 = !found3 ? p.source.trim() : lang ? currencyFormat(lang, found3.currency, p.source.trim()) : fixed?.[1] ?? p.source.trim();
         let param = params.find((q) => q.source === source2 && !q.sub);
         if (!param) {
           const at2 = p.at === void 0 || found3 ? void 0 : p.at + (p.source.length - p.source.trimStart().length);
-          param = { name: paramName(p.name ?? p.source, taken), source: source2, ...at2 === void 0 ? {} : { at: at2 } };
+          param = {
+            name: paramName(p.name ?? p.source, taken),
+            source: source2,
+            ...at2 === void 0 ? {} : { at: at2 },
+            ...found3 ? { currency: { code: found3.currency, ...fixed ? { digits: Number(fixed[2] || 0) } : {} } } : {}
+          };
           params.push(param);
         }
         text5 += `{${param.name}}`;
@@ -192698,7 +192705,7 @@ var init_markup = __esm({
     init_filters();
     init_scanner();
     init_locale_formats();
-    AMOUNT = /^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)*(?:\.toFixed\(\s*\d*\s*\))?$/;
+    AMOUNT = /^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)*(?:\.(?:toFixed|toStringAsFixed)\(\s*\d*\s*\))?$/;
     translatableAttr = (value) => isTranslatable(normalizeWhitespace(decodeEntities(value)));
     cleanAttr = (value) => normalizeWhitespace(decodeEntities(value)).trim();
     IGNORED_ELEMENTS2 = /* @__PURE__ */ new Set(["script", "style", "code", "pre", "kbd", "samp", "noscript", "textarea"]);
@@ -193696,7 +193703,7 @@ function contextAt(pos, groups) {
   }
   return null;
 }
-function scanDart(code2, filePath) {
+function scanDart(code2, filePath, money2) {
   const { strings: literals, groups, consts, comments } = lexDart(code2);
   const strings2 = [];
   const warnings2 = [];
@@ -193769,10 +193776,11 @@ function scanDart(code2, filePath) {
       component,
       element: named2 ?? "Text",
       ...run.params.length ? { params: run.params.map((p) => p.name) } : {},
-      ...run.plural ? { plural: run.plural } : {}
+      ...run.plural ? { plural: run.plural } : {},
+      ...run.params.some((p) => p.currency) ? { currencies: Object.fromEntries(run.params.filter((p) => p.currency).map((p) => [p.name, p.currency])) } : {}
     });
   };
-  const runOf = (lit2) => buildRun(lit2.parts, { counts: true });
+  const runOf = (lit2) => buildRun(lit2.parts, { counts: true, money: money2 });
   const zeroPlural = (count, zero, rest2) => {
     const none = buildRun(zero.parts);
     const some = runOf(rest2);
@@ -193873,7 +193881,7 @@ function scanDart(code2, filePath) {
   return { strings: strings2, warnings: warnings2, sites, removeConst };
 }
 function transformDart(code2, filePath, keys, opts) {
-  const { sites, removeConst } = scanDart(code2, filePath);
+  const { sites, removeConst } = scanDart(code2, filePath, opts.money);
   const s = new MagicString(code2);
   const replacements2 = [];
   const removed2 = /* @__PURE__ */ new Set();
@@ -193942,7 +193950,7 @@ var init_dart = __esm({
       (_2, c) => c.startsWith("u{") ? String.fromCodePoint(parseInt(c.slice(2, -1), 16)) : c.length > 1 ? String.fromCodePoint(parseInt(c.slice(1), 16)) : c === "n" ? "\n" : c === "t" ? "	" : c
     );
     dartAdapter = {
-      scan: (code2, filePath) => scanDart(code2, filePath),
+      scan: (code2, filePath, opts) => scanDart(code2, filePath, opts.money),
       transform: (code2, filePath, keys, opts) => transformDart(code2, filePath, keys, opts)
     };
   }
@@ -215625,6 +215633,27 @@ function flutterOptions(cwd, _config, changed) {
     nullableGetter: l10n.nullableGetter
   };
 }
+async function upgradeFlutterDelegates(ctx) {
+  const { cwd, config, result } = ctx;
+  const pubspecText = readText(cwd, "pubspec.yaml", ctx.changed);
+  if (!pubspecText) return;
+  const { parseDocument: parseDocument3 } = await Promise.resolve().then(() => __toESM(require_dist(), 1));
+  const doc = parseDocument3(pubspecText);
+  if (!doc.hasIn(["dependencies", "material_ui"])) return;
+  const files = import_fast_glob5.default.sync(`${srcPrefix(config)}**/*.dart`, { cwd, ignore: ["**/l10n/**", "**/generated/**"] });
+  let wired = false;
+  for (const file2 of files) {
+    const code2 = readText(cwd, file2, ctx.changed) ?? "";
+    if (!/\bMaterialApp\b/.test(code2) || !code2.includes(`localizationsDelegates: ${GEN_L10N_DELEGATES}`)) continue;
+    ctx.out(file2, addImports(code2.replace(`localizationsDelegates: ${GEN_L10N_DELEGATES}`, `localizationsDelegates: ${MATERIAL_UI_DELEGATES}`), MATERIAL_UI_IMPORTS));
+    wired = true;
+  }
+  if (wired && !doc.hasIn(["dependencies", "cupertino_ui"])) {
+    doc.setIn(["dependencies", "cupertino_ui"], "any");
+    ctx.out("pubspec.yaml", doc.toString({ lineWidth: 0 }));
+    result.addedDependencies.cupertino_ui = "any";
+  }
+}
 async function planFlutterSetup(ctx) {
   const { cwd, config, result } = ctx;
   const { parseDocument: parseDocument3, isMap: isMap3 } = await Promise.resolve().then(() => __toESM(require_dist(), 1));
@@ -215679,17 +215708,10 @@ async function planFlutterSetup(ctx) {
     const indent2 = `${/^[ \t]*/.exec(code2.slice(lineStart))[0]}  `;
     const rest2 = code2.slice(at2);
     let next2 = `${code2.slice(0, at2)}
-${indent2}localizationsDelegates: AppLocalizations.localizationsDelegates,
+${indent2}localizationsDelegates: ${GEN_L10N_DELEGATES},
 ${indent2}supportedLocales: AppLocalizations.supportedLocales,${/^\s*\n/.test(rest2) ? "" : `
 ${indent2}`}${rest2.replace(/^[ \t]+/, "")}`;
-    if (!next2.includes(flutterImport)) {
-      const imports2 = [...next2.matchAll(/^import\s+['"][^'"]+['"][^;]*;[ \t]*$/gm)];
-      const last = imports2[imports2.length - 1];
-      next2 = last ? `${next2.slice(0, last.index + last[0].length)}
-${flutterImport}${next2.slice(last.index + last[0].length)}` : `${flutterImport}
-
-${next2}`;
-    }
+    next2 = addImports(next2, [flutterImport]);
     ctx.out(file2, next2);
     result.entryFile = file2;
   }
@@ -215705,7 +215727,7 @@ ${list4}
 	</array>
 ${plistText.slice(end2)}`);
   }
-  result.notes.push("Flutter: run `flutter pub get`; gen-l10n writes AppLocalizations on the next run or build.");
+  result.notes.push("Flutter: gen-l10n writes AppLocalizations on the next `flutter run` or build (or `flutter gen-l10n`).");
   return result;
 }
 function astroModulePath(cwd, config) {
@@ -216528,7 +216550,7 @@ ${all.map((l2) => `    <locale android:name="${l2}" />`).join("\n")}
   }
   return result;
 }
-var import_fast_glob5, toPosix, GENERATED, SELF_VERSION, isGenerated, VUE_I18N, SVELTE_I18N, NUXT_I18N, locales, ident, relFrom, RTL, rtlLine, documentLines, rememberLines, pluralRuleLines, detectLines, bestLanguage, BROWSER_LANGUAGES, pickLanguage, firstExisting, hasDep, I18NEXT, ngxTranslateFor, ngModulePipe, addTranslatePipe, angularPluralLines, angularRichModuleLines, angularRichLines, EMBER_INTL, EMBER_RICH;
+var import_fast_glob5, toPosix, GENERATED, SELF_VERSION, isGenerated, VUE_I18N, SVELTE_I18N, NUXT_I18N, locales, ident, relFrom, RTL, rtlLine, documentLines, rememberLines, pluralRuleLines, detectLines, bestLanguage, BROWSER_LANGUAGES, pickLanguage, firstExisting, hasDep, I18NEXT, ngxTranslateFor, ngModulePipe, addTranslatePipe, angularPluralLines, angularRichModuleLines, angularRichLines, addImports, GEN_L10N_DELEGATES, MATERIAL_UI_DELEGATES, MATERIAL_UI_IMPORTS, EMBER_INTL, EMBER_RICH;
 var init_setup_frameworks = __esm({
   "src/setup-frameworks.ts"() {
     "use strict";
@@ -216542,7 +216564,7 @@ var init_setup_frameworks = __esm({
     init_seo();
     toPosix = (p) => p.split(path8.sep).join("/");
     GENERATED = "Generated by localize.dev";
-    SELF_VERSION = true ? "0.35.3" : "0.6.0";
+    SELF_VERSION = true ? "0.35.4" : "0.6.0";
     isGenerated = (code2) => {
       for (const m2 of code2.matchAll(/Generated by localize\.dev/gi)) {
         if ((code2.slice(0, m2.index).match(/(?<!\\)`/g)?.length ?? 0) % 2 === 0) return true;
@@ -216725,6 +216747,23 @@ var init_setup_frameworks = __esm({
       "  }",
       "}",
       ""
+    ];
+    addImports = (code2, lines) => {
+      const wanted = lines.filter((line) => !code2.includes(line));
+      if (!wanted.length) return code2;
+      const imports2 = [...code2.matchAll(/^import\s+['"][^'"]+['"][^;]*;[ \t]*$/gm)];
+      const last = imports2[imports2.length - 1];
+      return last ? `${code2.slice(0, last.index + last[0].length)}
+${wanted.join("\n")}${code2.slice(last.index + last[0].length)}` : `${wanted.join("\n")}
+
+${code2}`;
+    };
+    GEN_L10N_DELEGATES = "AppLocalizations.localizationsDelegates";
+    MATERIAL_UI_DELEGATES = "[AppLocalizations.delegate, GlobalMaterialLocalizations.delegate, GlobalCupertinoLocalizations.delegate, GlobalWidgetsLocalizations.delegate]";
+    MATERIAL_UI_IMPORTS = [
+      "import 'package:material_ui/material_ui.dart';",
+      "import 'package:cupertino_ui/cupertino_ui.dart' show GlobalCupertinoLocalizations;",
+      "import 'package:flutter_localizations/flutter_localizations.dart' show GlobalWidgetsLocalizations;"
     ];
     EMBER_INTL = { "ember-intl": "^7.1.0" };
     EMBER_RICH = "app/components/i18n-t";
@@ -218681,6 +218720,7 @@ function closingParen(code2, open3) {
 }
 function flutter(ctx) {
   const file2 = "lib/language_switcher.dart";
+  const material = /^\s+material_ui:/m.test(readText(ctx.cwd, "pubspec.yaml", ctx.changed) ?? "") ? "package:material_ui/material_ui.dart" : "package:flutter/material.dart";
   const row = (l2) => `  LanguageInfo(${str(l2.code, true)}, ${str(l2.name, true)}, ${str(l2.nativeName, true)}, ${str(l2.flag, true)}, isRtl: ${l2.dir === "rtl"}),`;
   const written = write2(
     ctx,
@@ -218690,7 +218730,7 @@ function flutter(ctx) {
       "// language.of(context) (useLanguage): the current language, its flag and names; `languages` is the",
       "// list and language.set(code) switches. MaterialApp follows `language.locale` (null: the device's).",
       `// ${DOCS2}`,
-      "import 'package:flutter/material.dart';",
+      `import '${material}';`,
       "",
       "/// A language this app is translated into.",
       "class LanguageInfo {",
@@ -219354,6 +219394,7 @@ async function planSetup(opts, result, changed, out) {
   const native = { cwd, config, files: opts.files, changed, out, result };
   if (config.framework === "flutter") {
     if (!opts.upgradeOnly) await planFlutterSetup(native);
+    await upgradeFlutterDelegates(native);
     planNativeFrameworkSwitcher(native);
     return result;
   }
@@ -220268,7 +220309,7 @@ var init_setup = __esm({
     NOT_SOURCE = ["**/node_modules/**", "**/*.d.ts", "**/{dist,build,out,coverage,.next,.react-router,.svelte-kit,.output,.astro,.vercel,.netlify}/**"];
     ENTRY_NAMES = ["main", "index"].flatMap((n4) => ["tsx", "jsx", "ts", "js"].map((e2) => `${n4}.${e2}`));
     EXTS2 = ["tsx", "jsx", "ts", "js"];
-    SELF_VERSION2 = true ? "0.35.3" : "0.6.0";
+    SELF_VERSION2 = true ? "0.35.4" : "0.6.0";
     isLegacySwitcher = (code2) => isGenerated(code2) && code2.includes("function nameOf(") && code2.includes("<select") && !code2.includes("localize-dev/react");
     LOCKFILES = { npm: "package-lock.json", pnpm: "pnpm-lock.yaml", yarn: "yarn.lock", bun: "bun.lock" };
     LOCK_ONLY = {
@@ -221632,7 +221673,10 @@ function moneyOptions(cwd, config) {
   return { lang: config.framework === "solid" ? "i18n.language" : "i18next.language", currency: config.currency };
 }
 function templateMoney(config) {
-  return config.localizeFormats !== false && config.framework === "vue" ? { lang: "$i18n.locale", currency: config.currency } : void 0;
+  if (config.localizeFormats === false) return void 0;
+  if (config.framework === "vue") return { lang: "$i18n.locale", currency: config.currency };
+  if (config.framework === "flutter") return { currency: config.currency };
+  return void 0;
 }
 function formatLang2(cwd, config) {
   return config.localizeFormats !== false && nextAppRouter(cwd, config) ? "i18n.language" : void 0;
@@ -221967,6 +222011,12 @@ async function runPipeline(opts) {
       const write3 = (dict2, value, where) => typeof value === "string" ? set3(dict2, key2, toDictFormat(value, config.interpolation), where) : guard(() => writePlural(dict2, key2, value, config.interpolation, !!s.plural?.ordinal), where);
       if (isNew) {
         if (!write3(sourceDict, s.plural ?? s.originalText, sourcePath)) continue;
+        if (s.currencies && sourcePath.endsWith(".arb")) {
+          const placeholders = Object.fromEntries(
+            Object.entries(s.currencies).map(([name, c]) => [name, { type: "double", format: "simpleCurrency", optionalParameters: { name: c.code, ...c.digits === void 0 ? {} : { decimalDigits: c.digits } } }])
+          );
+          sourceDict[`@${key2}`] = { placeholders };
+        }
         stats.newKeys++;
       } else if (!keep) {
         stats.reusedKeys++;
@@ -223006,6 +223056,19 @@ function startWatchdog(minutes) {
 // src/github/pr_bot.ts
 init_merge_locales();
 init_paths();
+var INLINE_LIMIT = 32 * 1024;
+async function mapLimit(items, limit, fn2) {
+  const results = new Array(items.length);
+  let next2 = 0;
+  const worker = async () => {
+    while (next2 < items.length) {
+      const i3 = next2++;
+      results[i3] = await fn2(items[i3]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 async function createLocalizationPullRequest(params) {
   const github = client(params.githubToken, params.baseUrl);
   const repo = `/repos/${params.owner}/${params.repo}`;
@@ -223021,10 +223084,12 @@ async function createLocalizationPullRequest(params) {
   );
   const files = new Map(params.changedFiles.map((f2) => [repoPath(f2.path), f2.content]));
   const edits = branchSha ? await keepEdits(github, repo, baseSha, branchSha, files) : { kept: [], replaced: [] };
-  const tree = await github("POST", `${repo}/git/trees`, {
-    base_tree: baseCommit.tree.sha,
-    tree: [...files].map(([path23, content]) => ({ path: path23, mode: "100644", type: "blob", content }))
-  });
+  const entries = await mapLimit(
+    [...files],
+    4,
+    async ([path23, content]) => Buffer.byteLength(content) > INLINE_LIMIT ? { path: path23, mode: "100644", type: "blob", sha: (await github("POST", `${repo}/git/blobs`, { content, encoding: "utf-8" })).sha } : { path: path23, mode: "100644", type: "blob", content }
+  );
+  const tree = await github("POST", `${repo}/git/trees`, { base_tree: baseCommit.tree.sha, tree: entries });
   const commit = await github("POST", `${repo}/git/commits`, {
     message: params.commitMessage ?? `i18n(localize.dev): extract UI strings into translation keys`,
     tree: tree.sha,
