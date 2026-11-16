@@ -25204,6 +25204,25 @@ var require_out4 = __commonJS({
 // src/framework.ts
 import * as fs3 from "node:fs";
 import * as path from "node:path";
+function inertiaFramework(cwd) {
+  if (!fs3.existsSync(path.join(cwd, "resources/js"))) return null;
+  try {
+    if (!/"laravel\/framework"/.test(fs3.readFileSync(path.join(cwd, "composer.json"), "utf8"))) return null;
+  } catch {
+    return null;
+  }
+  let deps = {};
+  try {
+    const pkg = JSON.parse(fs3.readFileSync(path.join(cwd, "package.json"), "utf8"));
+    deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  } catch {
+    return null;
+  }
+  if (deps["@inertiajs/vue3"] || deps["@inertiajs/vue2"] || deps["@inertiajs/inertia-vue3"]) return "vue";
+  if (deps["@inertiajs/react"] || deps["@inertiajs/inertia-react"]) return "react";
+  if (deps["@inertiajs/svelte"]) return "svelte";
+  return null;
+}
 function detectFramework(cwd) {
   const file2 = (name) => {
     try {
@@ -25212,14 +25231,14 @@ function detectFramework(cwd) {
       return "";
     }
   };
-  if (/\bsdk:\s*flutter\b/.test(file2("pubspec.yaml"))) return "flutter";
+  if (/\bsdk:\s*flutter\b/.test(file2("pubspec.yaml")) || /^ {2}flutter:\n(?: {4}.*\n)*? {4}source: sdk$/m.test(file2("pubspec.lock"))) return "flutter";
   if (/^\s*gem\s+['"]rails['"]/m.test(file2("Gemfile"))) return "rails";
-  if (/"laravel\/framework"/.test(file2("composer.json"))) return "laravel";
+  if (/"laravel\/framework"/.test(file2("composer.json"))) return inertiaFramework(cwd) ?? "laravel";
   if (fs3.existsSync(path.join(cwd, "manage.py")) || /^django\b/im.test(file2("requirements.txt")) || /["']django\b/i.test(file2("pyproject.toml"))) return "django";
   const gradle = ["build.gradle", "build.gradle.kts", "app/build.gradle", "app/build.gradle.kts", "settings.gradle", "settings.gradle.kts"].map(file2).join("\n");
   if (/com\.android\.application|android\.application/.test(gradle)) return "android";
   const xcodegen = /^targets:/m.test(file2("project.yml")) && /\bplatform:\s*\[?\s*(iOS|macOS|tvOS|watchOS|visionOS)\b/.test(file2("project.yml"));
-  if (fs3.readdirSync(cwd).some((f2) => f2.endsWith(".xcodeproj") || f2.endsWith(".xcworkspace")) || ["Package.swift", "Project.swift"].some((f2) => fs3.existsSync(path.join(cwd, f2))) || xcodegen) return "ios";
+  if (fs3.readdirSync(cwd).some((f2) => f2.endsWith(".xcodeproj") || f2.endsWith(".xcworkspace")) || ["Package.swift", "Project.swift", "Workspace.swift", "Tuist.swift"].some((f2) => fs3.existsSync(path.join(cwd, f2))) || xcodegen) return "ios";
   let deps = {};
   try {
     const pkg = JSON.parse(fs3.readFileSync(path.join(cwd, "package.json"), "utf8"));
@@ -25464,7 +25483,8 @@ function loadConfig(cwd, overrides = {}) {
   const chosen = { ...defined(fromFile), ...defined(overrides) };
   const framework = chosen.framework ?? detectFramework(cwd);
   const defaults = framework === "astro" ? { ...frameworkDefaults(framework), ...astroDefaults(astroIslands(cwd)) } : frameworkDefaults(framework);
-  const config = { ...DEFAULT_CONFIG, ...defaults, ...chosen, framework };
+  const inertia = !chosen.framework && framework !== "laravel" && inertiaFramework(cwd) === framework ? { srcDir: "resources/js", localesPath: "resources/js/locales/{locale}.json" } : {};
+  const config = { ...DEFAULT_CONFIG, ...defaults, ...inertia, ...chosen, framework };
   if (!chosen.targetLocales && !defaults.targetLocales) config.defaultLocales = true;
   if (!chosen.include && ["react", "react-native", "solid"].includes(framework) && jsxInJs(path3.join(cwd, config.srcDir), config.ignore)) config.include = [...config.include, "**/*.js"];
   config.siteUrl ??= declaredSiteUrl(cwd);
@@ -42861,12 +42881,12 @@ var require_generated = __commonJS({
     exports.isImmutable = isImmutable;
     exports.isImport = isImport;
     exports.isImportAttribute = isImportAttribute;
-    exports.isImportDeclaration = isImportDeclaration3;
+    exports.isImportDeclaration = isImportDeclaration4;
     exports.isImportDefaultSpecifier = isImportDefaultSpecifier2;
     exports.isImportExpression = isImportExpression;
     exports.isImportNamespaceSpecifier = isImportNamespaceSpecifier2;
     exports.isImportOrExportDeclaration = isImportOrExportDeclaration;
-    exports.isImportSpecifier = isImportSpecifier3;
+    exports.isImportSpecifier = isImportSpecifier4;
     exports.isIndexedAccessType = isIndexedAccessType;
     exports.isInferredPredicate = isInferredPredicate;
     exports.isInterfaceDeclaration = isInterfaceDeclaration;
@@ -42892,7 +42912,7 @@ var require_generated = __commonJS({
     exports.isJSXText = isJSXText3;
     exports.isLVal = isLVal;
     exports.isLabeledStatement = isLabeledStatement2;
-    exports.isLiteral = isLiteral2;
+    exports.isLiteral = isLiteral3;
     exports.isLogicalExpression = isLogicalExpression3;
     exports.isLoop = isLoop;
     exports.isMemberExpression = isMemberExpression9;
@@ -42903,7 +42923,7 @@ var require_generated = __commonJS({
     exports.isModuleDeclaration = isModuleDeclaration;
     exports.isModuleExpression = isModuleExpression;
     exports.isModuleSpecifier = isModuleSpecifier;
-    exports.isNewExpression = isNewExpression;
+    exports.isNewExpression = isNewExpression2;
     exports.isNoop = isNoop;
     exports.isNullLiteral = isNullLiteral;
     exports.isNullLiteralTypeAnnotation = isNullLiteralTypeAnnotation;
@@ -43222,7 +43242,7 @@ var require_generated = __commonJS({
       if (node2.type !== "MemberExpression") return false;
       return opts == null || (0, _shallowEqual.default)(node2, opts);
     }
-    function isNewExpression(node2, opts) {
+    function isNewExpression2(node2, opts) {
       if (!node2) return false;
       if (node2.type !== "NewExpression") return false;
       return opts == null || (0, _shallowEqual.default)(node2, opts);
@@ -43377,7 +43397,7 @@ var require_generated = __commonJS({
       if (node2.type !== "ForOfStatement") return false;
       return opts == null || (0, _shallowEqual.default)(node2, opts);
     }
-    function isImportDeclaration3(node2, opts) {
+    function isImportDeclaration4(node2, opts) {
       if (!node2) return false;
       if (node2.type !== "ImportDeclaration") return false;
       return opts == null || (0, _shallowEqual.default)(node2, opts);
@@ -43392,7 +43412,7 @@ var require_generated = __commonJS({
       if (node2.type !== "ImportNamespaceSpecifier") return false;
       return opts == null || (0, _shallowEqual.default)(node2, opts);
     }
-    function isImportSpecifier3(node2, opts) {
+    function isImportSpecifier4(node2, opts) {
       if (!node2) return false;
       if (node2.type !== "ImportSpecifier") return false;
       return opts == null || (0, _shallowEqual.default)(node2, opts);
@@ -44939,7 +44959,7 @@ var require_generated = __commonJS({
       }
       return opts == null || (0, _shallowEqual.default)(node2, opts);
     }
-    function isLiteral2(node2, opts) {
+    function isLiteral3(node2, opts) {
       if (!node2) return false;
       switch (node2.type) {
         case "StringLiteral":
@@ -56792,8 +56812,8 @@ var require_virtual_types_validator = __commonJS({
       isForStatement,
       isForXStatement,
       isIdentifier: isIdentifier11,
-      isImportDeclaration: isImportDeclaration3,
-      isImportSpecifier: isImportSpecifier3,
+      isImportDeclaration: isImportDeclaration4,
+      isImportSpecifier: isImportSpecifier4,
       isJSXIdentifier: isJSXIdentifier4,
       isJSXMemberExpression: isJSXMemberExpression2,
       isMemberExpression: isMemberExpression9,
@@ -56892,11 +56912,11 @@ var require_virtual_types_validator = __commonJS({
       } = this;
       if (nodeIsFlow(node2)) {
         return true;
-      } else if (isImportDeclaration3(node2)) {
+      } else if (isImportDeclaration4(node2)) {
         return node2.importKind === "type" || node2.importKind === "typeof";
       } else if (isExportDeclaration(node2)) {
         return node2.exportKind === "type";
-      } else if (isImportSpecifier3(node2)) {
+      } else if (isImportSpecifier4(node2)) {
         return node2.importKind === "type" || node2.importKind === "typeof";
       } else {
         return false;
@@ -57622,8 +57642,8 @@ var require_scope = __commonJS({
       isExportNamedDeclaration: isExportNamedDeclaration3,
       isFunctionDeclaration: isFunctionDeclaration4,
       isIdentifier: isIdentifier11,
-      isImportDeclaration: isImportDeclaration3,
-      isLiteral: isLiteral2,
+      isImportDeclaration: isImportDeclaration4,
+      isLiteral: isLiteral3,
       isMemberExpression: isMemberExpression9,
       isMethod,
       isModuleSpecifier,
@@ -57656,18 +57676,18 @@ var require_scope = __commonJS({
     function gatherNodeParts(node2, parts) {
       switch (node2 == null ? void 0 : node2.type) {
         default:
-          if (isImportDeclaration3(node2) || isExportDeclaration(node2)) {
+          if (isImportDeclaration4(node2) || isExportDeclaration(node2)) {
             var _node$specifiers;
-            if ((isExportAllDeclaration(node2) || isExportNamedDeclaration3(node2) || isImportDeclaration3(node2)) && node2.source) {
+            if ((isExportAllDeclaration(node2) || isExportNamedDeclaration3(node2) || isImportDeclaration4(node2)) && node2.source) {
               gatherNodeParts(node2.source, parts);
-            } else if ((isExportNamedDeclaration3(node2) || isImportDeclaration3(node2)) && (_node$specifiers = node2.specifiers) != null && _node$specifiers.length) {
+            } else if ((isExportNamedDeclaration3(node2) || isImportDeclaration4(node2)) && (_node$specifiers = node2.specifiers) != null && _node$specifiers.length) {
               for (const e2 of node2.specifiers) gatherNodeParts(e2, parts);
             } else if ((isExportDefaultDeclaration2(node2) || isExportNamedDeclaration3(node2)) && node2.declaration) {
               gatherNodeParts(node2.declaration, parts);
             }
           } else if (isModuleSpecifier(node2)) {
             gatherNodeParts(node2.local, parts);
-          } else if (isLiteral2(node2) && !isNullLiteral(node2) && !isRegExpLiteral(node2) && !isTemplateLiteral3(node2)) {
+          } else if (isLiteral3(node2) && !isNullLiteral(node2) && !isRegExpLiteral(node2) && !isTemplateLiteral3(node2)) {
             parts.push(node2.value);
           }
           break;
@@ -60904,9 +60924,9 @@ var require_expressions = __commonJS({
     var _index = require_node2();
     var {
       isCallExpression: isCallExpression7,
-      isLiteral: isLiteral2,
+      isLiteral: isLiteral3,
       isMemberExpression: isMemberExpression9,
-      isNewExpression,
+      isNewExpression: isNewExpression2,
       isPattern
     } = _t;
     function UnaryExpression(node2) {
@@ -60964,7 +60984,7 @@ var require_expressions = __commonJS({
       this.print(node2.callee);
       if (this.format.minified && node2.arguments.length === 0 && !node2.optional && !isCallExpression7(parent, {
         callee: node2
-      }) && !isMemberExpression9(parent) && !isNewExpression(parent)) {
+      }) && !isMemberExpression9(parent) && !isNewExpression2(parent)) {
         return;
       }
       this.print(node2.typeArguments);
@@ -61016,7 +61036,7 @@ var require_expressions = __commonJS({
       if (!computed && isMemberExpression9(property2)) {
         throw new TypeError("Got a MemberExpression for MemberExpression property");
       }
-      if (isLiteral2(property2) && typeof property2.value === "number") {
+      if (isLiteral3(property2) && typeof property2.value === "number") {
         computed = true;
       }
       if (optional) {
@@ -61132,7 +61152,7 @@ var require_expressions = __commonJS({
         throw new TypeError("Got a MemberExpression for MemberExpression property");
       }
       let computed = node2.computed;
-      if (isLiteral2(node2.property) && typeof node2.property.value === "number") {
+      if (isLiteral3(node2.property) && typeof node2.property.value === "number") {
         computed = true;
       }
       if (computed) {
@@ -68026,7 +68046,7 @@ var require_parse4 = __commonJS({
       isFunction: isFunction3,
       isIdentifier: isIdentifier11,
       isJSXIdentifier: isJSXIdentifier4,
-      isNewExpression,
+      isNewExpression: isNewExpression2,
       isPlaceholder,
       isStatement,
       isStringLiteral: isStringLiteral11,
@@ -68099,7 +68119,7 @@ var require_parse4 = __commonJS({
         expectedNode: "StringLiteral"
       })) {
         type = "string";
-      } else if (isNewExpression(parent) && key2 === "arguments" || isCallExpression7(parent) && key2 === "arguments" || isFunction3(parent) && key2 === "params") {
+      } else if (isNewExpression2(parent) && key2 === "arguments" || isCallExpression7(parent) && key2 === "arguments" || isFunction3(parent) && key2 === "params") {
         type = "param";
       } else if (isExpressionStatement3(parent) && !isPlaceholder(node2)) {
         type = "statement";
@@ -69152,7 +69172,7 @@ var require_introspection = __commonJS({
       isBlockStatement: isBlockStatement4,
       isExpression: isExpression2,
       isIdentifier: isIdentifier11,
-      isLiteral: isLiteral2,
+      isLiteral: isLiteral3,
       isStringLiteral: isStringLiteral11,
       isType,
       matchesPattern: _matchesPattern
@@ -69428,7 +69448,7 @@ var require_introspection = __commonJS({
         return this.get("expression").resolve(dangerous, resolved);
       } else if (dangerous && this.isMemberExpression()) {
         const targetKey = this.toComputedKey();
-        if (!isLiteral2(targetKey)) return;
+        if (!isLiteral3(targetKey)) return;
         const targetName = targetKey.value;
         const target = this.get("object").resolve(dangerous, resolved);
         if (target.isObjectExpression()) {
@@ -71123,12 +71143,13 @@ var init_locale_formats = __esm({
 function parseCode(code2) {
   return (0, import_parser2.parse)(code2, {
     sourceType: "module",
-    plugins: ["jsx", "typescript", "decorators-legacy"]
+    plugins: ["jsx", "typescript", "decorators-legacy", "decoratorAutoAccessors"]
   });
 }
 function parseAndScanComponent(code2, filePath, options = {}) {
   sourceLanguage = (options.sourceLocale ?? "en").toLowerCase().split(/[-_]/)[0];
   money = options.money ?? null;
+  formatLang = options.formatLang ?? null;
   const ast = parseCode(code2);
   const attributes2 = new Set(options.attributes ?? DEFAULT_ATTRIBUTES);
   const extractedStrings = [];
@@ -71160,7 +71181,8 @@ function parseAndScanComponent(code2, filePath, options = {}) {
         params = [...params, ...versions.params];
       }
     }
-    let hook = resolveHookTarget(path23, code2, !!options.server, !!options.server && kind2 === "trans");
+    const needsI18n = !!options.server && kind2 === "trans" || usesFormatLang(params);
+    let hook = resolveHookTarget(path23, code2, !!options.server, needsI18n);
     let contextual = false;
     if ("reason" in hook && hook.reason === OUTSIDE_COMPONENTS && !options.server && options.richText !== false && !options.richFunction && (kind2 === "jsxChild" || kind2 === "trans") && !plural) {
       hook = { fnStart: -1, componentName: "module", mode: "reuse", insertAt: -1, bodyEnd: -1, indent: "" };
@@ -71491,12 +71513,16 @@ function parseAndScanComponent(code2, filePath, options = {}) {
     TemplateLiteral(path23) {
       if (t2.isTaggedTemplateExpression(path23.parent) || consumed.has(path23.node)) return;
       const call7 = path23.parentPath;
-      const shownProse = !!call7?.isCallExpression() && call7.node.arguments[0] === path23.node && !!(messageCall(call7.node) ?? pushedMessages(call7));
+      const shown = call7?.isCallExpression() ? messageCall(call7.node) ?? pushedMessages(call7) : null;
+      const at2 = call7?.isCallExpression() ? call7.node.arguments.indexOf(path23.node) : -1;
+      const shownProse = !!shown && at2 !== -1 && at2 < (shown.messageArgs ?? 1);
       const slot = expressionSlot(path23, attributes2) ?? (shownProse ? {} : null);
       if (!slot || isIgnored(path23)) return;
       if (shownProse && !expressionSlot(path23, attributes2)) {
-        const words = path23.node.quasis.map((q) => q.value.cooked ?? "").join(" x ").trim();
-        if (!/\s/.test(words) || !new RegExp("^\\p{Lu}", "u").test(words)) return;
+        const quasis = path23.node.quasis.map((q) => q.value.cooked ?? "");
+        const words = quasis.join(" x ").trim();
+        const sentence = new RegExp("^\\p{Lu}", "u").test(words) || !quasis[0].trim() && quasis.join(" ").trim().split(/\s+/).length >= 3;
+        if (!/\s/.test(words) || !sentence) return;
       }
       const params = [];
       const plurals = path23.node.expressions.map((e2) => pluralTernary(e2));
@@ -71686,7 +71712,7 @@ function mergeTextRun(children, code2, ordinals = true) {
     const prev = children[children.indexOf(c) - 1];
     return t2.isJSXExpressionContainer(c) && t2.isJSXText(prev) && !!moneyPlaceholder(prev.value, c.expression, code2, []);
   };
-  if (!significant.every((c) => t2.isJSXText(c) || t2.isJSXExpressionContainer(c) && (special2.has(c.expression) || isValueExpression(c.expression) || priced(c)))) {
+  if (!significant.every((c) => t2.isJSXText(c) || t2.isJSXExpressionContainer(c) && (special2.has(c.expression) || isValueExpression(c.expression) || priced(c) || formattedValue(c.expression)))) {
     return null;
   }
   const sourceOf = (n4) => code2.slice(n4.start, n4.end);
@@ -71730,7 +71756,7 @@ function mergeTextRun(children, code2, ordinals = true) {
         template4 += `{${subFor.get(c.expression).name}}`;
       } else if (t2.isJSXExpressionContainer(c)) {
         const expr = c.expression;
-        const source2 = code2.slice(expr.start, expr.end);
+        const source2 = formattedValue(expr) ? formatSource(expr, code2) : code2.slice(expr.start, expr.end);
         const priced2 = moneyPlaceholder(template4, expr, code2, params);
         if (priced2) template4 = template4.slice(0, -priced2.symbol.length);
         let param = priced2?.param ?? params.find((p) => p.source === source2);
@@ -71844,6 +71870,32 @@ function mergeRichText(children, code2, attributes2, ownComponent = null) {
   if (t2.isJSXText(last)) end2 -= last.value.length - last.value.trimEnd().length;
   return { text: normalizeWhitespace(text4), params, range: { start: start2, end: end2 }, components, consumed };
 }
+function isPlainArgument(n4) {
+  if (t2.isArrayExpression(n4)) return n4.elements.every((e2) => !!e2 && isPlainArgument(e2));
+  if (t2.isObjectExpression(n4)) return n4.properties.every((p) => t2.isObjectProperty(p) && !p.computed && isPlainArgument(p.value));
+  return t2.isLiteral(n4) || isSimpleExpression(n4);
+}
+function formattedValue(expr) {
+  if (!t2.isCallExpression(expr) || !t2.isMemberExpression(expr.callee) || expr.callee.computed || !t2.isIdentifier(expr.callee.property)) return null;
+  const { object: object4, property: property2 } = expr.callee;
+  if (TO_LOCALE_METHODS.has(property2.name)) return isValueExpression(object4) && expr.arguments.every(isPlainArgument) ? object4 : null;
+  if (property2.name !== "format" || expr.arguments.length !== 1 || !isValueExpression(expr.arguments[0])) return null;
+  const intl = t2.isNewExpression(object4) && t2.isMemberExpression(object4.callee) && t2.isIdentifier(object4.callee.object, { name: "Intl" }) && t2.isIdentifier(object4.callee.property) && ["DateTimeFormat", "NumberFormat"].includes(object4.callee.property.name) && object4.arguments.every(isPlainArgument);
+  return intl ? expr.arguments[0] : null;
+}
+function formatSource(expr, code2) {
+  const whole2 = code2.slice(expr.start, expr.end);
+  const call7 = expr;
+  const callee = call7.callee;
+  const target = t2.isNewExpression(callee.object) && callee.property && t2.isIdentifier(callee.property, { name: "format" }) ? callee.object : call7;
+  const [locale] = target.arguments;
+  if (!formatLang || !isFixedLocale(locale)) return whole2;
+  const at2 = (n4) => n4 - expr.start;
+  if (locale) return `${whole2.slice(0, at2(locale.start))}${formatLang}${whole2.slice(at2(locale.end))}`;
+  const calleeEnd = (target === call7 ? callee : target.callee).end;
+  const open3 = whole2.indexOf("(", at2(calleeEnd));
+  return `${whole2.slice(0, open3 + 1)}${formatLang}${whole2.slice(open3 + 1)}`;
+}
 function moneyPlaceholder(before2, expr, code2, taken) {
   if (!money || !isAmount(expr)) return null;
   const found2 = currencyAtEnd(before2, money.currency);
@@ -71916,17 +71968,17 @@ function messageCall(call7) {
   };
   if (t2.isIdentifier(callee) && (SETTER.test(callee.name) || callee.name === "useState")) return { literals: strings2(call7.arguments.slice(0, 1)), prose: true };
   if (t2.isMemberExpression(callee) && t2.isIdentifier(callee.object, { name: "React" }) && t2.isIdentifier(callee.property, { name: "useState" })) return { literals: strings2(call7.arguments.slice(0, 1)), prose: true };
-  if (t2.isIdentifier(callee) && TOAST_FNS.has(callee.name)) return { literals: strings2(call7.arguments.slice(0, 2)), prose: false };
+  if (t2.isIdentifier(callee) && TOAST_FNS.has(callee.name)) return { literals: strings2(call7.arguments.slice(0, 2)), prose: false, messageArgs: 2 };
   if (t2.isMemberExpression(callee) && !callee.computed && t2.isIdentifier(callee.property)) {
     const object4 = callee.object;
     if (t2.isIdentifier(object4, { name: "Alert" }) && /^(alert|prompt)$/.test(callee.property.name)) {
       const buttons = call7.arguments[2];
       const texts = t2.isArrayExpression(buttons) ? buttons.elements.flatMap((b4) => t2.isObjectExpression(b4) ? b4.properties.filter((p) => t2.isObjectProperty(p) && t2.isIdentifier(p.key, { name: "text" }) && t2.isStringLiteral(p.value)).map((p) => p.value) : []) : [];
-      return { literals: [...strings2(call7.arguments.slice(0, 2)), ...texts], prose: false };
+      return { literals: [...strings2(call7.arguments.slice(0, 2)), ...texts], prose: false, messageArgs: 2 };
     }
     if (t2.isIdentifier(object4) && TOAST_OBJECTS.has(object4.name)) {
       if (object4.name === "window" && !/^(alert|confirm)$/.test(callee.property.name)) return null;
-      return { literals: strings2(call7.arguments.slice(0, 2)), prose: false };
+      return { literals: strings2(call7.arguments.slice(0, 2)), prose: false, messageArgs: 2 };
     }
     const root = chainRoot(callee);
     if (SCHEMA_METHODS.has(callee.property.name) && t2.isIdentifier(root) && /^(z|yup|Yup|v|zod)$/.test(root.name)) {
@@ -72106,6 +72158,14 @@ function scanConstants(ast, add, hookFor, use, report, move, imported, external)
           if (found2.reads.length || !found2.followed && literals.some((l2) => prose(normalizeWhitespace(l2.value)))) copy.set(key2, literals);
         }
       }
+      if (isList && !copy.size && !languageTagged(init2)) {
+        const items = init2.elements;
+        if (items.length > 1 && items.every((e2) => t2.isStringLiteral(e2) && new RegExp("^\\p{Lu}", "u").test(e2.value) && isTranslatable(normalizeWhitespace(e2.value)))) {
+          const found2 = follow(binding2, /* @__PURE__ */ new Set([ITEM]), true, false);
+          const asText = (p) => !!p.parentPath?.isJSXExpressionContainer() && (!!p.parentPath.parentPath?.isJSXElement() || !!p.parentPath.parentPath?.isJSXFragment());
+          if (found2.followed && found2.reads.length && found2.reads.every((r) => asText(r.path))) copy.set(ITEM, items);
+        }
+      }
       if (!copy.size) return;
       if (path23.parentPath.parentPath?.isExportNamedDeclaration() && !binding2.referencePaths.length) return;
       const { reads, followed, ignored } = follow(binding2, new Set(copy.keys()), isList, isLookup);
@@ -72263,9 +72323,12 @@ function shownListItem(path23) {
 }
 function paramNameFor(expr) {
   if (t2.isIdentifier(expr)) return expr.name;
+  const formatted = formattedValue(expr);
+  if (formatted) return paramNameFor(formatted);
   if (t2.isBinaryExpression(expr) && t2.isExpression(expr.left) && !t2.isNumericLiteral(expr.left)) return paramNameFor(expr.left);
   if (t2.isMemberExpression(expr) && !expr.computed && t2.isIdentifier(expr.property)) {
     if (GENERIC_PROPS.has(expr.property.name)) return "count";
+    if (expr.property.name === "value" && t2.isIdentifier(expr.object)) return expr.object.name;
     return expr.property.name;
   }
   if (t2.isOptionalMemberExpression(expr) && !expr.computed && t2.isIdentifier(expr.property)) {
@@ -72804,7 +72867,7 @@ function pluralFromSource(source2) {
   const found2 = pluralTernary(expr);
   return found2 ? { count: source2.slice(found2.count.start, found2.count.end), one: found2.one, other: found2.other } : null;
 }
-var import_parser2, import_traverse2, t2, traverse2, IGNORED_ELEMENTS, INLINE_CODE_TAGS, IGNORE_ATTRIBUTES, COPY_PROPS, literalText, IRREGULAR, UNCOUNTABLE, PLURAL_HELPER, ORDINAL_SUFFIX, calleeName, TAG_NAMES, VOID_TAGS, sourceLanguage, money, isAmount, GENDER, LIST_QUERIES, ITEM, prose, VALUE_FIELDS, COPY_KEYS, SETTER, TOAST_FNS, TOAST_OBJECTS, SCHEMA_METHODS, GENERIC_PROPS, OUTSIDE_COMPONENTS, isComponentClass, DEPENDENCY_HOOKS, META_TEXT2, ENGLISH_ORDINAL_SUFFIX;
+var import_parser2, import_traverse2, t2, traverse2, IGNORED_ELEMENTS, INLINE_CODE_TAGS, IGNORE_ATTRIBUTES, COPY_PROPS, literalText, IRREGULAR, UNCOUNTABLE, PLURAL_HELPER, ORDINAL_SUFFIX, calleeName, TAG_NAMES, VOID_TAGS, sourceLanguage, money, formatLang, TO_LOCALE_METHODS, isFixedLocale, usesFormatLang, isAmount, GENDER, LIST_QUERIES, ITEM, prose, VALUE_FIELDS, COPY_KEYS, SETTER, TOAST_FNS, TOAST_OBJECTS, SCHEMA_METHODS, GENERIC_PROPS, OUTSIDE_COMPONENTS, isComponentClass, DEPENDENCY_HOOKS, META_TEXT2, ENGLISH_ORDINAL_SUFFIX;
 var init_scanner = __esm({
   "src/ast/scanner.ts"() {
     "use strict";
@@ -72829,6 +72892,10 @@ var init_scanner = __esm({
     VOID_TAGS = /* @__PURE__ */ new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
     sourceLanguage = "en";
     money = null;
+    formatLang = null;
+    TO_LOCALE_METHODS = /* @__PURE__ */ new Set(["toLocaleDateString", "toLocaleTimeString", "toLocaleString"]);
+    isFixedLocale = (n4) => !n4 || t2.isIdentifier(n4, { name: "undefined" }) || t2.isStringLiteral(n4) && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(n4.value) || t2.isArrayExpression(n4) && n4.elements.length > 0 && n4.elements.every((e2) => !!e2 && t2.isStringLiteral(e2));
+    usesFormatLang = (params) => !!formatLang && params.some((p) => p.source.includes(formatLang));
     isAmount = (expr) => t2.isCallExpression(expr) ? t2.isMemberExpression(expr.callee) && t2.isIdentifier(expr.callee.property, { name: "toFixed" }) && isValueExpression(expr.callee.object) : isValueExpression(expr);
     GENDER = /(gender|sex|pronouns?)$/i;
     LIST_QUERIES = /* @__PURE__ */ new Set(["length", "findIndex", "findLastIndex", "some", "every", "includes", "indexOf"]);
@@ -138262,10 +138329,10 @@ const ${helpers.map((s) => `_${helperNameMap[s]} = ${helperNameMap[s]}`).join(",
           const isAssignmentLVal = parent && parent.type === "AssignmentExpression" && parent.left === id3;
           const isUpdateArg = parent && parent.type === "UpdateExpression" && parent.argument === id3;
           const isDestructureAssignment = parent && isInDestructureAssignment(parent, parentStack);
-          const isNewExpression = parent && isInNewExpression(parentStack);
+          const isNewExpression2 = parent && isInNewExpression(parentStack);
           const wrapWithUnref = (raw2) => {
             const wrapped = `${context.helperString(UNREF)}(${raw2})`;
-            return isNewExpression ? `(${wrapped})` : wrapped;
+            return isNewExpression2 ? `(${wrapped})` : wrapped;
           };
           if (isConst(type) || type === "setup-reactive-const" || localVars[raw]) {
             return raw;
@@ -138325,14 +138392,14 @@ const ${helpers.map((s) => `_${helperNameMap[s]} = ${helperNameMap[s]}`).join(",
       if (ast === null || !ast && isSimpleIdentifier(rawExp)) {
         const isScopeVarReference = context.identifiers[rawExp];
         const isAllowedGlobal = shared.isGloballyAllowed(rawExp);
-        const isLiteral2 = isLiteralWhitelisted(rawExp);
-        if (!asParams && !isScopeVarReference && !isLiteral2 && (!isAllowedGlobal || bindingMetadata[rawExp])) {
+        const isLiteral3 = isLiteralWhitelisted(rawExp);
+        if (!asParams && !isScopeVarReference && !isLiteral3 && (!isAllowedGlobal || bindingMetadata[rawExp])) {
           if (isConst(bindingMetadata[rawExp])) {
             node2.constType = 1;
           }
           node2.content = rewriteIdentifier(rawExp);
         } else if (!isScopeVarReference) {
-          if (isLiteral2) {
+          if (isLiteral3) {
             node2.constType = 3;
           } else {
             node2.constType = 2;
@@ -145143,10 +145210,10 @@ const ${helpers.map((s) => `_${helperNameMap[s]} = ${helperNameMap[s]}`).join(",
           const isAssignmentLVal = parent && parent.type === "AssignmentExpression" && parent.left === id3;
           const isUpdateArg = parent && parent.type === "UpdateExpression" && parent.argument === id3;
           const isDestructureAssignment = parent && isInDestructureAssignment(parent, parentStack);
-          const isNewExpression = parent && isInNewExpression(parentStack);
+          const isNewExpression2 = parent && isInNewExpression(parentStack);
           const wrapWithUnref = (raw2) => {
             const wrapped = `${context.helperString(UNREF)}(${raw2})`;
-            return isNewExpression ? `(${wrapped})` : wrapped;
+            return isNewExpression2 ? `(${wrapped})` : wrapped;
           };
           if (isConst(type) || type === "setup-reactive-const" || localVars[raw]) {
             return raw;
@@ -145206,14 +145273,14 @@ const ${helpers.map((s) => `_${helperNameMap[s]} = ${helperNameMap[s]}`).join(",
       if (ast === null || !ast && isSimpleIdentifier(rawExp)) {
         const isScopeVarReference = context.identifiers[rawExp];
         const isAllowedGlobal = shared.isGloballyAllowed(rawExp);
-        const isLiteral2 = isLiteralWhitelisted(rawExp);
-        if (!asParams && !isScopeVarReference && !isLiteral2 && (!isAllowedGlobal || bindingMetadata[rawExp])) {
+        const isLiteral3 = isLiteralWhitelisted(rawExp);
+        if (!asParams && !isScopeVarReference && !isLiteral3 && (!isAllowedGlobal || bindingMetadata[rawExp])) {
           if (isConst(bindingMetadata[rawExp])) {
             node2.constType = 1;
           }
           node2.content = rewriteIdentifier(rawExp);
         } else if (!isScopeVarReference) {
-          if (isLiteral2) {
+          if (isLiteral3) {
             node2.constType = 3;
           } else {
             node2.constType = 2;
@@ -182120,11 +182187,11 @@ function preparePath(data2, sexpr, parts, loc2) {
   let depth = 0;
   for (let i3 = 0, l2 = parts.length; i3 < l2; i3++) {
     let part = parts[i3].part;
-    let isLiteral2 = parts[i3].original !== part;
+    let isLiteral3 = parts[i3].original !== part;
     let separator = parts[i3].separator;
     let partPrefix = separator === ".#" ? "#" : "";
     original += (separator || "") + part;
-    if (!isLiteral2 && (part === ".." || part === "." || part === "this")) {
+    if (!isLiteral3 && (part === ".." || part === "." || part === "this")) {
       if (tail.length > 0) {
         throw new Exception("Invalid path: " + original, {
           loc: loc2
@@ -183409,7 +183476,7 @@ function normalize(source2, options = {
   let locals = top.getUsedTemplateLocals();
   return [astV2, locals];
 }
-function isLiteral(node2) {
+function isLiteral2(node2) {
   switch (node2.type) {
     case "StringLiteral":
     case "BooleanLiteral":
@@ -191723,7 +191790,7 @@ var init_es = __esm({
           case "PathExpression":
             return this.path(expr, resolution);
           case "SubExpression": {
-            if (isLiteral(expr.path)) {
+            if (isLiteral2(expr.path)) {
               assertIllegalLiteral(expr.path, expr.loc);
             }
             let resolution2 = this.block.resolutionFor(expr, SexpSyntaxContext);
@@ -191919,7 +191986,7 @@ var init_es = __esm({
         } = mustache;
         let loc2 = this.block.loc(mustache.loc);
         let value;
-        if (isLiteral(path23)) {
+        if (isLiteral2(path23)) {
           if (params.length === 0 && hash2.pairs.length === 0) {
             value = this.expr.normalize(path23);
           } else {
@@ -191953,7 +192020,7 @@ var init_es = __esm({
           inverse
         } = block3;
         let loc2 = this.block.loc(block3.loc);
-        if (isLiteral(block3.path)) {
+        if (isLiteral2(block3.path)) {
           assertIllegalLiteral(block3.path, loc2);
         }
         let resolution = this.block.resolutionFor(block3, BlockSyntaxContext);
@@ -192043,7 +192110,7 @@ var init_es = __esm({
         }
       }
       modifier(m2) {
-        if (isLiteral(m2.path)) {
+        if (isLiteral2(m2.path)) {
           assertIllegalLiteral(m2.path, m2.loc);
         }
         let resolution = this.ctx.resolutionFor(m2, ModifierSyntaxContext);
@@ -192069,7 +192136,7 @@ var init_es = __esm({
           hash: hash2,
           loc: loc2
         } = mustache;
-        if (isLiteral(path23)) {
+        if (isLiteral2(path23)) {
           if (params.length === 0 && hash2.pairs.length === 0) {
             return this.expr.normalize(path23);
           } else {
@@ -192442,7 +192509,7 @@ var init_optional = __esm({
 
 // src/formats/markup.ts
 function paramName(source2, taken) {
-  const path23 = source2.trim().replace(/\.(?:length|size)$/, "");
+  const path23 = source2.trim().replace(/\.(?:toFixed|toPrecision|toString|toStringAsFixed|toLocale\w*)\([\s\S]*\)$/, "").replace(/\.(?:length|size|value)$/, "");
   const last = /([A-Za-z_$][\w$]*)\s*(?:\(\s*\))?\s*$/.exec(path23)?.[1];
   let base = last && /^[A-Za-z_]\w*$/.test(last) ? last : "value";
   if (base === "t" || base === "$t" || base === "_") base = "value";
@@ -192500,11 +192567,20 @@ function buildRun(parts, opts = {}) {
       else if (ordinal && ordinals[i3] === ordinal) text5 += `{count}${ENGLISH_ORDINAL_SUFFIX[form]}`;
       else if (subAt.has(i3)) text5 += `{${subAt.get(i3).name}}`;
       else {
-        const source2 = p.source.trim();
+        const found3 = opts.money && AMOUNT.test(p.source.trim()) ? currencyAtEnd(text5, opts.money.currency) : null;
+        if (found3) text5 = text5.slice(0, -found3.symbol.length);
+        const fixed = found3 ? /^([\s\S]+?)\.(?:toFixed|toStringAsFixed)\(\s*(\d*)\s*\)$/.exec(p.source.trim()) : null;
+        const lang = opts.money?.lang;
+        const source2 = !found3 ? p.source.trim() : lang ? currencyFormat(lang, found3.currency, p.source.trim()) : fixed?.[1] ?? p.source.trim();
         let param = params.find((q) => q.source === source2 && !q.sub);
         if (!param) {
-          const at2 = p.at === void 0 ? void 0 : p.at + (p.source.length - p.source.trimStart().length);
-          param = { name: paramName(p.name ?? source2, taken), source: source2, ...at2 === void 0 ? {} : { at: at2 } };
+          const at2 = p.at === void 0 || found3 ? void 0 : p.at + (p.source.length - p.source.trimStart().length);
+          param = {
+            name: paramName(p.name ?? p.source, taken),
+            source: source2,
+            ...at2 === void 0 ? {} : { at: at2 },
+            ...found3 ? { currency: { code: found3.currency, ...fixed ? { digits: Number(fixed[2] || 0) } : {} } } : {}
+          };
           params.push(param);
         }
         text5 += `{${param.name}}`;
@@ -192622,12 +192698,14 @@ function richSlots(message, add) {
     return translatableAttr(inner) ? { ...slot, innerId: add(inner, { kind: "run", start: 0, end: 0, params: [], nested: true }, { element: slot.name }) } : slot;
   });
 }
-var translatableAttr, cleanAttr, IGNORED_ELEMENTS2, IGNORE_ATTRIBUTES2, INLINE_ELEMENTS;
+var AMOUNT, translatableAttr, cleanAttr, IGNORED_ELEMENTS2, IGNORE_ATTRIBUTES2, INLINE_ELEMENTS;
 var init_markup = __esm({
   "src/formats/markup.ts"() {
     "use strict";
     init_filters();
     init_scanner();
+    init_locale_formats();
+    AMOUNT = /^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)*(?:\.(?:toFixed|toStringAsFixed)\(\s*\d*\s*\))?$/;
     translatableAttr = (value) => isTranslatable(normalizeWhitespace(decodeEntities(value)));
     cleanAttr = (value) => normalizeWhitespace(decodeEntities(value)).trim();
     IGNORED_ELEMENTS2 = /* @__PURE__ */ new Set(["script", "style", "code", "pre", "kbd", "samp", "noscript", "textarea"]);
@@ -192810,7 +192888,7 @@ function inlineTemplates(code2) {
   if (!/@Component\s*\(/.test(code2)) return [];
   let ast;
   try {
-    ast = (0, import_parser4.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy"], errorRecovery: true });
+    ast = (0, import_parser4.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy", "decoratorAutoAccessors"], errorRecovery: true });
   } catch {
     return [];
   }
@@ -192842,7 +192920,7 @@ function angularScript(code2, inlineTemplate, major) {
   if (!/@(Component|Injectable|Directive)\s*\(/.test(code2)) return out;
   let ast;
   try {
-    ast = (0, import_parser4.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy"], errorRecovery: true });
+    ast = (0, import_parser4.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy", "decoratorAutoAccessors"], errorRecovery: true });
   } catch {
     return out;
   }
@@ -193479,7 +193557,7 @@ var init_lit = __esm({
     init_filters();
     traverse6 = import_traverse5.default.default ?? import_traverse5.default;
     RAW = /* @__PURE__ */ new Set([...IGNORED_ELEMENTS2, "script", "style"]);
-    parseCode2 = (code2) => (0, import_parser5.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy"], errorRecovery: true });
+    parseCode2 = (code2) => (0, import_parser5.parse)(code2, { sourceType: "module", plugins: ["typescript", "decorators-legacy", "decoratorAutoAccessors"], errorRecovery: true });
     isLitTemplate = (n4) => t5.isIdentifier(n4.tag) && (n4.tag.name === "html" || n4.tag.name === "svg");
     paramObject2 = (params) => `{ ${params.map((p) => p.name === p.source ? p.name : `${p.name}: ${p.source}`).join(", ")} }`;
     call3 = (key2, params, ordinal = false) => params.length ? `t('${key2}', ${paramObject2(ordinal ? [...params, { name: "ordinal", source: "true" }] : params)})` : `t('${key2}')`;
@@ -193625,7 +193703,7 @@ function contextAt(pos, groups) {
   }
   return null;
 }
-function scanDart(code2, filePath) {
+function scanDart(code2, filePath, money2) {
   const { strings: literals, groups, consts, comments } = lexDart(code2);
   const strings2 = [];
   const warnings2 = [];
@@ -193698,10 +193776,11 @@ function scanDart(code2, filePath) {
       component,
       element: named2 ?? "Text",
       ...run.params.length ? { params: run.params.map((p) => p.name) } : {},
-      ...run.plural ? { plural: run.plural } : {}
+      ...run.plural ? { plural: run.plural } : {},
+      ...run.params.some((p) => p.currency) ? { currencies: Object.fromEntries(run.params.filter((p) => p.currency).map((p) => [p.name, p.currency])) } : {}
     });
   };
-  const runOf = (lit2) => buildRun(lit2.parts, { counts: true });
+  const runOf = (lit2) => buildRun(lit2.parts, { counts: true, money: money2 });
   const zeroPlural = (count, zero, rest2) => {
     const none = buildRun(zero.parts);
     const some = runOf(rest2);
@@ -193802,7 +193881,7 @@ function scanDart(code2, filePath) {
   return { strings: strings2, warnings: warnings2, sites, removeConst };
 }
 function transformDart(code2, filePath, keys, opts) {
-  const { sites, removeConst } = scanDart(code2, filePath);
+  const { sites, removeConst } = scanDart(code2, filePath, opts.money);
   const s = new MagicString(code2);
   const replacements2 = [];
   const removed2 = /* @__PURE__ */ new Set();
@@ -193871,7 +193950,7 @@ var init_dart = __esm({
       (_2, c) => c.startsWith("u{") ? String.fromCodePoint(parseInt(c.slice(2, -1), 16)) : c.length > 1 ? String.fromCodePoint(parseInt(c.slice(1), 16)) : c === "n" ? "\n" : c === "t" ? "	" : c
     );
     dartAdapter = {
-      scan: (code2, filePath) => scanDart(code2, filePath),
+      scan: (code2, filePath, opts) => scanDart(code2, filePath, opts.money),
       transform: (code2, filePath, keys, opts) => transformDart(code2, filePath, keys, opts)
     };
   }
@@ -210484,6 +210563,19 @@ function languageName2(locale) {
   }
 }
 function storeFor(config, project) {
+  const store = storeOf(config, project);
+  return {
+    ...store,
+    read: (text4, locale) => {
+      try {
+        return store.read(text4, locale);
+      } catch (e2) {
+        throw new Error(`${store.path(locale)} ${e2.message}`);
+      }
+    }
+  };
+}
+function storeOf(config, project) {
   const p = config.localesPath;
   if (p.endsWith(".xcstrings")) return xcstringsStore(p, config.sourceLocale);
   if (config.framework === "android") return androidStore(p.replace(/\/values[^/]*\/strings\.xml$/, "").replace(/\/$/, ""), config.sourceLocale);
@@ -210506,12 +210598,14 @@ var init_stores = __esm({
     encodeKey = (text4) => text4.replace(/\./g, DOT);
     decodeKey = (key2) => key2.replace(new RegExp(DOT, "g"), ".");
     json = (text4) => {
+      if (!text4?.trim()) return {};
+      let v2;
       try {
-        const v2 = text4?.trim() ? JSON.parse(text4) : {};
-        return v2 && typeof v2 === "object" && !Array.isArray(v2) ? v2 : {};
-      } catch {
-        return {};
+        v2 = JSON.parse(text4);
+      } catch (e2) {
+        throw new Error(`isn't valid JSON (${e2.message}). Fix it and run again; nothing was written to it`);
       }
+      return v2 && typeof v2 === "object" && !Array.isArray(v2) ? v2 : {};
     };
     jsonStore = (pattern) => ({
       path: (l2) => pattern.replace(/\{locale\}/g, l2),
@@ -211187,7 +211281,7 @@ function emberScript(code2) {
   if (!/\b(?:alert|confirm|prompt|toast|notify)\s*\(|document\.title/.test(script)) return out;
   let ast;
   try {
-    ast = (0, import_parser8.parse)(script, { sourceType: "module", plugins: ["typescript", "decorators-legacy"], errorRecovery: true });
+    ast = (0, import_parser8.parse)(script, { sourceType: "module", plugins: ["typescript", "decorators-legacy", "decoratorAutoAccessors"], errorRecovery: true });
   } catch {
     return out;
   }
@@ -212350,6 +212444,7 @@ async function scanVue(code2, filePath, opts) {
           open: code2.slice(c.loc.start.offset, first.loc.start.offset),
           close: code2.slice(last.loc.end.offset, c.loc.end.offset),
           text: code2.slice(first.loc.start.offset, last.loc.end.offset),
+          at: first.loc.start.offset,
           ...nested ? { nested } : {}
         });
         text4 += `{${name}}`;
@@ -212359,18 +212454,18 @@ async function scanVue(code2, filePath, opts) {
     if (!isTranslatable(message.replace(/\{\w+\}/g, " "))) return null;
     return { message, slots, significant };
   };
-  const register = (built) => built.slots.map(({ nested, ...slot }) => {
+  const register = (built) => built.slots.map(({ nested, at: at2, ...slot }) => {
     if (nested) {
       const slots = register(nested);
       const innerRichId = `str_${n4 + 1}`;
-      add(nested.message, { kind: "rich", start: 0, end: 0, params: slots.map((x) => ({ name: x.name, source: x.source ?? x.name })), slots, nested: true }, { element: slot.name });
+      add(nested.message, { kind: "rich", start: 0, end: 0, params: slots.map((x) => ({ name: x.name, source: x.source ?? x.name })), slots, nested: true }, { element: slot.name, ...at2 === void 0 ? {} : { loc: lineOf(code2, at2) } });
       return { ...slot, innerRichId };
     }
     if (slot.text === void 0) return slot;
     const inner = normalizeWhitespace(decodeEntities(slot.text)).trim();
     if (!isTranslatable(inner)) return slot;
     const innerId = `str_${n4 + 1}`;
-    add(inner, { kind: "run", start: 0, end: 0, params: [], nested: true }, { element: slot.name });
+    add(inner, { kind: "run", start: 0, end: 0, params: [], nested: true }, { element: slot.name, ...at2 === void 0 ? {} : { loc: lineOf(code2, at2) } });
     return { ...slot, innerId };
   });
   const rich = (children, element3) => {
@@ -212419,7 +212514,7 @@ async function scanVue(code2, filePath, opts) {
     return true;
   };
   const runSite = (parts, element3) => {
-    const run = buildRun(parts, { counts: true, ordinals: true, values: true });
+    const run = buildRun(parts, { counts: true, ordinals: true, values: true, money: opts.money });
     if (!run) {
       for (const p of parts) if (p.kind === "expr" && p.at !== void 0 && !readSite(p.source, p.at)) expressionLiterals(p.source, p.at).forEach((l2) => literal5(l2, "template"));
     }
@@ -212622,13 +212717,17 @@ var init_vue = __esm({
 // src/formats/svelte.ts
 var svelte_exports = {};
 __export(svelte_exports, {
+  blankStyles: () => blankStyles,
   scanSvelte: () => scanSvelte,
   svelteAdapter: () => svelteAdapter,
   transformSvelte: () => transformSvelte
 });
+function blankStyles(code2) {
+  return code2.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/g, (_2, open3, body, close2) => open3 + body.replace(/[^\n]/g, " ") + close2);
+}
 async function scanSvelte(code2, filePath, opts) {
   const { parse: parse21 } = await loadOptional("svelte/compiler");
-  const ast = parse21(code2);
+  const ast = parse21(blankStyles(code2));
   const strings2 = [];
   const warnings2 = [];
   const sites = /* @__PURE__ */ new Map();
@@ -213295,6 +213394,7 @@ function transformComponent(code2, filePath, keys, options = {}) {
     if (!key2) continue;
     let site = scan.sites.get(str2.id);
     let text4;
+    if (usesFormatLang(site.params) && site.hook.fnStart !== -1) withI18n.add(site.hook.fnStart);
     if (insideTrans.has(site.id)) {
       if (keys.has(insideTrans.get(site.id).id)) {
         hooks.set(site.hook.fnStart, site.hook);
@@ -213397,6 +213497,12 @@ export default withTranslation()(${w4.className});
       s.overwrite(hook.insertAt, hook.bodyEnd, `export async function generateMetadata()${typed} {
   const { t } = await getTranslation();
   return `);
+      const object4 = code2.slice(hook.bodyEnd, hook.meta.objectEnd);
+      if (!object4.includes("`")) {
+        for (let i3 = object4.indexOf("\n"); i3 !== -1; i3 = object4.indexOf("\n", i3 + 1)) {
+          if (object4[i3 + 1] !== "\n") s.appendLeft(hook.bodyEnd + i3 + 1, "  ");
+        }
+      }
       if (hook.meta.statementEnd > hook.meta.objectEnd) s.overwrite(hook.meta.objectEnd, hook.meta.statementEnd, ";\n}");
       else s.appendRight(hook.meta.objectEnd, ";\n}");
       continue;
@@ -213436,8 +213542,8 @@ ${hook.indent}${line}`);
 ${hook.indent}`);
       continue;
     }
-    const hookLine = !server ? subscribeOnly.has(hook.fnStart) ? "useTranslation(); // re-renders when the language changes" : "const { t } = useTranslation();" : withI18n.has(hook.fnStart) ? "const { t, i18n } = await getTranslation();" : "const { t } = await getTranslation();";
-    if (server && hook.mode === "reuse" && hook.addI18nAt !== void 0 && withI18n.has(hook.fnStart)) s.appendLeft(hook.addI18nAt, ", i18n");
+    const hookLine = !server ? subscribeOnly.has(hook.fnStart) ? "useTranslation(); // re-renders when the language changes" : withI18n.has(hook.fnStart) ? "const { t, i18n } = useTranslation();" : "const { t } = useTranslation();" : withI18n.has(hook.fnStart) ? "const { t, i18n } = await getTranslation();" : "const { t } = await getTranslation();";
+    if (hook.mode === "reuse" && hook.addI18nAt !== void 0 && withI18n.has(hook.fnStart)) s.appendLeft(hook.addI18nAt, ", i18n");
     if (server && hook.mode !== "reuse" && hook.isAsync === false && hook.asyncAt !== void 0) s.appendLeft(hook.asyncAt, "async ");
     const extra = moved.get(hook.fnStart) ?? [];
     if (hook.mode === "insertBlock") {
@@ -213919,6 +214025,19 @@ var init_text_ranges = __esm({
 // src/rtl.ts
 import * as fs8 from "node:fs";
 import * as path7 from "node:path";
+function markRightToLeft(value, locale) {
+  if (!isRtl(locale)) return value;
+  const one = (text4) => {
+    if (text4.startsWith("\u200F") || !RTL_LETTER.test(text4) || /\{\s*[\w$.]+\s*,/.test(text4)) return text4;
+    for (const m2 of text4.replace(/<[^>]*>/g, "").matchAll(new RegExp("\\{([\\w$.]+)\\}|\\p{L}", "gu"))) {
+      if (m2[1] === "count") continue;
+      return m2[1] !== void 0 || !RTL_LETTER.test(m2[0]) ? `\u200F${text4}` : text4;
+    }
+    return text4;
+  };
+  if (typeof value === "string") return one(value);
+  return Object.fromEntries(Object.entries(value).map(([k, v2]) => [k, typeof v2 === "string" ? one(v2) : v2]));
+}
 function cssInScript(text4) {
   if (!/`/.test(text4)) return [];
   const out = [];
@@ -213977,7 +214096,7 @@ async function findPhysicalStyles(cwd, srcDir) {
   }
   return out;
 }
-var import_fast_glob4, RTL_LANGUAGES, RTL_SCRIPTS, isRtl, TAILWIND_SAFE, TAILWIND_REPORT, CSS_SAFE, CSS_REPORT, STYLES, MARKUP, SCRIPTS, CSS_IN_JS, IGNORE, CLASS_STRINGS;
+var import_fast_glob4, RTL_LANGUAGES, RTL_SCRIPTS, isRtl, RTL_LETTER, TAILWIND_SAFE, TAILWIND_REPORT, CSS_SAFE, CSS_REPORT, STYLES, MARKUP, SCRIPTS, CSS_IN_JS, IGNORE, CLASS_STRINGS;
 var init_rtl = __esm({
   "src/rtl.ts"() {
     "use strict";
@@ -213991,6 +214110,7 @@ var init_rtl = __esm({
       if (script) return RTL_SCRIPTS.test(script[0].toUpperCase() + script.slice(1).toLowerCase());
       return RTL_LANGUAGES.includes(language.toLowerCase());
     };
+    RTL_LETTER = /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Adlam}\p{Script=Hanifi_Rohingya}]/u;
     TAILWIND_SAFE = [
       [/^(-?)ml-/, "$1ms-"],
       [/^(-?)mr-/, "$1me-"],
@@ -215513,6 +215633,27 @@ function flutterOptions(cwd, _config, changed) {
     nullableGetter: l10n.nullableGetter
   };
 }
+async function upgradeFlutterDelegates(ctx) {
+  const { cwd, config, result } = ctx;
+  const pubspecText = readText(cwd, "pubspec.yaml", ctx.changed);
+  if (!pubspecText) return;
+  const { parseDocument: parseDocument3 } = await Promise.resolve().then(() => __toESM(require_dist(), 1));
+  const doc = parseDocument3(pubspecText);
+  if (!doc.hasIn(["dependencies", "material_ui"])) return;
+  const files = import_fast_glob5.default.sync(`${srcPrefix(config)}**/*.dart`, { cwd, ignore: ["**/l10n/**", "**/generated/**"] });
+  let wired = false;
+  for (const file2 of files) {
+    const code2 = readText(cwd, file2, ctx.changed) ?? "";
+    if (!/\bMaterialApp\b/.test(code2) || !code2.includes(`localizationsDelegates: ${GEN_L10N_DELEGATES}`)) continue;
+    ctx.out(file2, addImports(code2.replace(`localizationsDelegates: ${GEN_L10N_DELEGATES}`, `localizationsDelegates: ${MATERIAL_UI_DELEGATES}`), MATERIAL_UI_IMPORTS));
+    wired = true;
+  }
+  if (wired && !doc.hasIn(["dependencies", "cupertino_ui"])) {
+    doc.setIn(["dependencies", "cupertino_ui"], "any");
+    ctx.out("pubspec.yaml", doc.toString({ lineWidth: 0 }));
+    result.addedDependencies.cupertino_ui = "any";
+  }
+}
 async function planFlutterSetup(ctx) {
   const { cwd, config, result } = ctx;
   const { parseDocument: parseDocument3, isMap: isMap3 } = await Promise.resolve().then(() => __toESM(require_dist(), 1));
@@ -215567,17 +215708,10 @@ async function planFlutterSetup(ctx) {
     const indent2 = `${/^[ \t]*/.exec(code2.slice(lineStart))[0]}  `;
     const rest2 = code2.slice(at2);
     let next2 = `${code2.slice(0, at2)}
-${indent2}localizationsDelegates: AppLocalizations.localizationsDelegates,
+${indent2}localizationsDelegates: ${GEN_L10N_DELEGATES},
 ${indent2}supportedLocales: AppLocalizations.supportedLocales,${/^\s*\n/.test(rest2) ? "" : `
 ${indent2}`}${rest2.replace(/^[ \t]+/, "")}`;
-    if (!next2.includes(flutterImport)) {
-      const imports2 = [...next2.matchAll(/^import\s+['"][^'"]+['"][^;]*;[ \t]*$/gm)];
-      const last = imports2[imports2.length - 1];
-      next2 = last ? `${next2.slice(0, last.index + last[0].length)}
-${flutterImport}${next2.slice(last.index + last[0].length)}` : `${flutterImport}
-
-${next2}`;
-    }
+    next2 = addImports(next2, [flutterImport]);
     ctx.out(file2, next2);
     result.entryFile = file2;
   }
@@ -215593,7 +215727,7 @@ ${list4}
 	</array>
 ${plistText.slice(end2)}`);
   }
-  result.notes.push("Flutter: run `flutter pub get`; gen-l10n writes AppLocalizations on the next run or build.");
+  result.notes.push("Flutter: gen-l10n writes AppLocalizations on the next `flutter run` or build (or `flutter gen-l10n`).");
   return result;
 }
 function astroModulePath(cwd, config) {
@@ -216416,7 +216550,7 @@ ${all.map((l2) => `    <locale android:name="${l2}" />`).join("\n")}
   }
   return result;
 }
-var import_fast_glob5, toPosix, GENERATED, SELF_VERSION, isGenerated, VUE_I18N, SVELTE_I18N, NUXT_I18N, locales, ident, relFrom, RTL, rtlLine, documentLines, rememberLines, pluralRuleLines, detectLines, bestLanguage, BROWSER_LANGUAGES, pickLanguage, firstExisting, hasDep, I18NEXT, ngxTranslateFor, ngModulePipe, addTranslatePipe, angularPluralLines, angularRichModuleLines, angularRichLines, EMBER_INTL, EMBER_RICH;
+var import_fast_glob5, toPosix, GENERATED, SELF_VERSION, isGenerated, VUE_I18N, SVELTE_I18N, NUXT_I18N, locales, ident, relFrom, RTL, rtlLine, documentLines, rememberLines, pluralRuleLines, detectLines, bestLanguage, BROWSER_LANGUAGES, pickLanguage, firstExisting, hasDep, I18NEXT, ngxTranslateFor, ngModulePipe, addTranslatePipe, angularPluralLines, angularRichModuleLines, angularRichLines, addImports, GEN_L10N_DELEGATES, MATERIAL_UI_DELEGATES, MATERIAL_UI_IMPORTS, EMBER_INTL, EMBER_RICH;
 var init_setup_frameworks = __esm({
   "src/setup-frameworks.ts"() {
     "use strict";
@@ -216430,8 +216564,13 @@ var init_setup_frameworks = __esm({
     init_seo();
     toPosix = (p) => p.split(path8.sep).join("/");
     GENERATED = "Generated by localize.dev";
-    SELF_VERSION = true ? "0.35.0" : "0.6.0";
-    isGenerated = (code2) => /Generated by localize\.dev/i.test(code2);
+    SELF_VERSION = true ? "0.35.4" : "0.6.0";
+    isGenerated = (code2) => {
+      for (const m2 of code2.matchAll(/Generated by localize\.dev/gi)) {
+        if ((code2.slice(0, m2.index).match(/(?<!\\)`/g)?.length ?? 0) % 2 === 0) return true;
+      }
+      return false;
+    };
     VUE_I18N = { "vue-i18n": "^11.1.0" };
     SVELTE_I18N = { "svelte-i18n": "^4.0.1" };
     NUXT_I18N = { "@nuxtjs/i18n": "^10.0.0" };
@@ -216608,6 +216747,23 @@ var init_setup_frameworks = __esm({
       "  }",
       "}",
       ""
+    ];
+    addImports = (code2, lines) => {
+      const wanted = lines.filter((line) => !code2.includes(line));
+      if (!wanted.length) return code2;
+      const imports2 = [...code2.matchAll(/^import\s+['"][^'"]+['"][^;]*;[ \t]*$/gm)];
+      const last = imports2[imports2.length - 1];
+      return last ? `${code2.slice(0, last.index + last[0].length)}
+${wanted.join("\n")}${code2.slice(last.index + last[0].length)}` : `${wanted.join("\n")}
+
+${code2}`;
+    };
+    GEN_L10N_DELEGATES = "AppLocalizations.localizationsDelegates";
+    MATERIAL_UI_DELEGATES = "[AppLocalizations.delegate, GlobalMaterialLocalizations.delegate, GlobalCupertinoLocalizations.delegate, GlobalWidgetsLocalizations.delegate]";
+    MATERIAL_UI_IMPORTS = [
+      "import 'package:material_ui/material_ui.dart';",
+      "import 'package:cupertino_ui/cupertino_ui.dart' show GlobalCupertinoLocalizations;",
+      "import 'package:flutter_localizations/flutter_localizations.dart' show GlobalWidgetsLocalizations;"
     ];
     EMBER_INTL = { "ember-intl": "^7.1.0" };
     EMBER_RICH = "app/components/i18n-t";
@@ -218249,7 +218405,7 @@ function planNativeSwitcher(ctx) {
       " */",
       "import { useState } from 'react';",
       `import { FlatList, Modal, Pressable, StyleSheet, Text, View${T(", type StyleProp, type TextStyle, type ViewStyle")} } from 'react-native';`,
-      `import { useLanguage as useBaseLanguage${T(", type LanguageInfo, type UseLanguageOptions")} } from 'localize-dev/react';`,
+      `import { LANGUAGE_LABELS, useLanguage as useBaseLanguage${T(", type LanguageInfo, type UseLanguageOptions")} } from 'localize-dev/react';`,
       "",
       "/** The current language and setLanguage(), on react-i18next. */",
       `export function useLanguage(options${T(": UseLanguageOptions")} = {}) {`,
@@ -218265,7 +218421,8 @@ function planNativeSwitcher(ctx) {
       "  const [open, setOpen] = useState(false);",
       "  return (",
       "    <>",
-      '      <Pressable accessibilityRole="button" accessibilityLabel={`Language: ${info.nativeName}`} onPress={() => setOpen(true)} style={[styles.button, style]}>',
+      // The button's name in the current language ("Idioma: Español"), as the web switcher says it.
+      "      <Pressable accessibilityRole=\"button\" accessibilityLabel={`${LANGUAGE_LABELS[info.code.split('-')[0]] ?? LANGUAGE_LABELS.en}: ${info.nativeName}`} onPress={() => setOpen(true)} style={[styles.button, style]}>",
       "        <Text style={textStyle}>{`${info.flag} ${nameOf(info, nameStyle)}`.trim()}</Text>",
       "      </Pressable>",
       '      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>',
@@ -218563,6 +218720,7 @@ function closingParen(code2, open3) {
 }
 function flutter(ctx) {
   const file2 = "lib/language_switcher.dart";
+  const material = /^\s+material_ui:/m.test(readText(ctx.cwd, "pubspec.yaml", ctx.changed) ?? "") ? "package:material_ui/material_ui.dart" : "package:flutter/material.dart";
   const row = (l2) => `  LanguageInfo(${str(l2.code, true)}, ${str(l2.name, true)}, ${str(l2.nativeName, true)}, ${str(l2.flag, true)}, isRtl: ${l2.dir === "rtl"}),`;
   const written = write2(
     ctx,
@@ -218572,7 +218730,7 @@ function flutter(ctx) {
       "// language.of(context) (useLanguage): the current language, its flag and names; `languages` is the",
       "// list and language.set(code) switches. MaterialApp follows `language.locale` (null: the device's).",
       `// ${DOCS2}`,
-      "import 'package:flutter/material.dart';",
+      `import '${material}';`,
       "",
       "/// A language this app is translated into.",
       "class LanguageInfo {",
@@ -219236,6 +219394,7 @@ async function planSetup(opts, result, changed, out) {
   const native = { cwd, config, files: opts.files, changed, out, result };
   if (config.framework === "flutter") {
     if (!opts.upgradeOnly) await planFlutterSetup(native);
+    await upgradeFlutterDelegates(native);
     planNativeFrameworkSwitcher(native);
     return result;
   }
@@ -219332,7 +219491,7 @@ async function planSetup(opts, result, changed, out) {
     return result;
   }
   if (pkg && pkgText) {
-    const wanted = { ...I18N_PACKAGES, ...config.interpolation === "icu" ? ICU_PACKAGES : {} };
+    const wanted = { ...I18N_PACKAGES, ...config.interpolation === "icu" ? ICU_PACKAGES : {}, ...config.framework === "react-native" ? NATIVE_PACKAGES : {} };
     for (const [name, range] of Object.entries(wanted)) if (!deps[name]) result.addedDependencies[name] = range;
     if (Object.keys(result.addedDependencies).length) {
       const merged = { ...pkg.dependencies, ...result.addedDependencies };
@@ -219390,6 +219549,7 @@ async function planSetup(opts, result, changed, out) {
     entries.push(`  ${name}: { translation: ${id3} },`);
   }
   const icu = config.interpolation === "icu";
+  const reactNative = config.framework === "react-native";
   const entry = routerApp?.root ?? findEntry(cwd, config, changed);
   const quote3 = prefersDoubleQuotes(entry ? readText(cwd, entry, changed) : opts.files[0]?.content ?? "") ? (code3) => code3.replace(/'/g, '"') : (code3) => code3;
   out(
@@ -219398,11 +219558,12 @@ async function planSetup(opts, result, changed, out) {
       "import i18n from 'i18next';",
       ...icu ? ["import ICU from 'i18next-icu';"] : [],
       "import { initReactI18next } from 'react-i18next';",
+      ...reactNative ? ["import AsyncStorage from '@react-native-async-storage/async-storage';"] : [],
       ...config.framework === "react-native" && config.targetLocales.some(isRtl) ? ["import { I18nManager } from 'react-native';"] : [],
       ...imports2,
       "",
       `// Generated by localize.dev. ${lazy ? "The source language is bundled, the rest load when first used" : "Every locale is bundled"}; the language comes from a saved choice`,
-      `// (localStorage "lang"), then the device language, then ${config.sourceLocale}.`,
+      `// (${reactNative ? "kept on the device with AsyncStorage" : "localStorage"} "lang"), then the device language, then ${config.sourceLocale}.`,
       "export const resources = {",
       ...entries,
       "};",
@@ -219423,7 +219584,7 @@ async function planSetup(opts, result, changed, out) {
         "  },",
         "};"
       ] : [`${router ? "export " : ""}const supported = Object.keys(resources);`],
-      "const saved = typeof localStorage === 'undefined' ? null : localStorage.getItem('lang');",
+      ...reactNative ? [] : ["const saved = typeof localStorage === 'undefined' ? null : localStorage.getItem('lang');"],
       "// The visitor languages in order (Intl on React Native, where navigator has none): matched",
       "// exactly (pt-BR), by language (pt-BR \u2192 pt), or to a regional variant the app has (pt \u2192 pt-BR).",
       "const devices = [...(typeof navigator !== 'undefined' && navigator.languages ? navigator.languages : []), typeof navigator !== 'undefined' ? navigator.language : undefined, typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().locale : undefined];",
@@ -219434,7 +219595,7 @@ async function planSetup(opts, result, changed, out) {
       "  .init({",
       "    resources,",
       ...lazy ? ["    partialBundledLanguages: true,", "    supportedLngs: supported, // every language, loaded or not: the language menu lists these", "    react: { useSuspense: false }, // shows the source language until a file arrives"] : [],
-      ssr ? `    lng: (typeof document !== 'undefined' && supported.includes(document.documentElement.lang) ? document.documentElement.lang : undefined) ?? '${config.sourceLocale}',` : `    lng: (saved && supported.includes(saved) ? saved : undefined) ?? device ?? '${config.sourceLocale}',`,
+      ssr ? `    lng: (typeof document !== 'undefined' && supported.includes(document.documentElement.lang) ? document.documentElement.lang : undefined) ?? '${config.sourceLocale}',` : reactNative ? `    lng: device ?? '${config.sourceLocale}',` : `    lng: (saved && supported.includes(saved) ? saved : undefined) ?? device ?? '${config.sourceLocale}',`,
       `    fallbackLng: '${config.sourceLocale}',`,
       "    interpolation: { escapeValue: false }, // React already escapes",
       "  });",
@@ -219467,13 +219628,21 @@ async function planSetup(opts, result, changed, out) {
         `const RTL = ${JSON.stringify(RTL_LANGUAGES).replace(/"/g, "'").replace(/,/g, ", ")};`,
         `const applyDirection = (lng${/\.tsx?$/.test(i18nFile) ? ": string" : ""}) => {`,
         "  const rtl = RTL.includes(lng.split('-')[0]);",
-        "  if (I18nManager.isRTL !== rtl) {",
-        "    I18nManager.allowRTL(rtl);",
-        "    I18nManager.forceRTL(rtl);",
-        "  }",
+        "  // Set every time, even when this start already matches: a saved choice restored after the",
+        "  // device language must win over it.",
+        "  I18nManager.allowRTL(rtl);",
+        "  I18nManager.forceRTL(rtl);",
         "};",
         "i18n.on('languageChanged', applyDirection);",
         "applyDirection(i18n.language);",
+        ""
+      ] : [],
+      ...reactNative ? [
+        "/** The language picked last time, then every change from now on, kept on the device. */",
+        "AsyncStorage.getItem('lang')",
+        "  .then((saved) => (saved && supported.includes(saved) && saved !== i18n.language ? i18n.changeLanguage(saved) : undefined))",
+        "  .catch(() => {}) // No storage (a bare app before pod install): the device language.",
+        "  .finally(() => i18n.on('languageChanged', (lng) => void AsyncStorage.setItem('lang', lng).catch(() => {})));",
         ""
       ] : [],
       ...ssr && !router ? [
@@ -219498,6 +219667,9 @@ async function planSetup(opts, result, changed, out) {
   addSwitcher({ cwd, config, changed, out, result, next: false, moduleFile: i18nFile, sample: entry ? readText(cwd, entry, changed) : opts.files[0]?.content ?? "", dir: routerApp ? "app/" : void 0 });
   if (config.framework === "react-native" && config.targetLocales.some(isRtl)) {
     result.notes.push("React Native: switching to or from a right-to-left language flips the layout on the next app start; restart it then (expo-updates reloadAsync, or react-native-restart).");
+  }
+  if (reactNative && result.addedDependencies["@react-native-async-storage/async-storage"]) {
+    result.notes.push("React Native: the chosen language is kept with @react-native-async-storage/async-storage. In Expo, `npx expo install --fix` picks the version your SDK expects; in a bare app, run `npx pod-install` after installing.");
   }
   if (typescript) enableJsonImports(cwd, changed, out);
   if (!entry) {
@@ -220044,10 +220216,14 @@ ${first ? indent2 : ""}`);
     s.appendRight(end2, ";\n}");
   }
   const importAt = afterLastImport(code2);
+  const fromServer = parseCode(code2).program.body.find(
+    (n4) => t9.isImportDeclaration(n4) && n4.source.value === opts.server && n4.importKind !== "type" && n4.specifiers.length > 0 && n4.specifiers.every((sp) => t9.isImportSpecifier(sp))
+  );
+  if (fromServer && !fromServer.specifiers.some((sp) => sp.local.name === "getLanguage")) s.appendLeft(fromServer.specifiers[fromServer.specifiers.length - 1].end, ", getLanguage");
   const lines = opts.quote(
     `import { I18nProvider } from '${opts.provider}';
-import { getLanguage } from '${opts.server}';
-import { LanguageAlternates } from '${opts.alternates}';`
+${fromServer ? "" : `import { getLanguage } from '${opts.server}';
+`}import { LanguageAlternates } from '${opts.alternates}';`
   );
   if (importAt === 0) s.prepend(`${lines}
 
@@ -220098,7 +220274,7 @@ function mergeFiles(files, extra) {
   for (const f2 of extra) byPath.set(repoPath(f2.path), { ...f2, path: repoPath(f2.path) });
   return [...byPath.values()];
 }
-var import_fast_glob10, t9, I18N_PACKAGES, ICU_PACKAGES, toPosix2, I18NEXT_INIT, sameJson, isPlainObject, NOT_SOURCE, ENTRY_NAMES, EXTS2, SELF_VERSION2, isLegacySwitcher, LOCKFILES, LOCK_ONLY;
+var import_fast_glob10, t9, I18N_PACKAGES, NATIVE_PACKAGES, ICU_PACKAGES, toPosix2, I18NEXT_INIT, sameJson, isPlainObject, NOT_SOURCE, ENTRY_NAMES, EXTS2, SELF_VERSION2, isLegacySwitcher, LOCKFILES, LOCK_ONLY;
 var init_setup = __esm({
   "src/setup.ts"() {
     "use strict";
@@ -220119,6 +220295,9 @@ var init_setup = __esm({
       i18next: "^26.5.0",
       "react-i18next": "^17.1.0"
     };
+    NATIVE_PACKAGES = {
+      "@react-native-async-storage/async-storage": "^2.2.0"
+    };
     ICU_PACKAGES = {
       "i18next-icu": "^2.6.0",
       "intl-messageformat": "^12.1.0"
@@ -220130,7 +220309,7 @@ var init_setup = __esm({
     NOT_SOURCE = ["**/node_modules/**", "**/*.d.ts", "**/{dist,build,out,coverage,.next,.react-router,.svelte-kit,.output,.astro,.vercel,.netlify}/**"];
     ENTRY_NAMES = ["main", "index"].flatMap((n4) => ["tsx", "jsx", "ts", "js"].map((e2) => `${n4}.${e2}`));
     EXTS2 = ["tsx", "jsx", "ts", "js"];
-    SELF_VERSION2 = true ? "0.35.0" : "0.6.0";
+    SELF_VERSION2 = true ? "0.35.4" : "0.6.0";
     isLegacySwitcher = (code2) => isGenerated(code2) && code2.includes("function nameOf(") && code2.includes("<select") && !code2.includes("localize-dev/react");
     LOCKFILES = { npm: "package-lock.json", pnpm: "pnpm-lock.yaml", yarn: "yarn.lock", bun: "bun.lock" };
     LOCK_ONLY = {
@@ -221106,6 +221285,14 @@ function catalogLocales(catalog, sourceLocale, wanted) {
   const unsupported = locales2.flatMap((l2) => catalog.unsupported?.(l2) ? [`${catalog.file}: ${catalog.unsupported(l2)}.`] : []);
   return { locales: locales2.filter((l2) => !catalog.unsupported?.(l2)), unsupported };
 }
+function assertJson(file2, text4) {
+  if (!/\.(json|arb)$/.test(file2) || !text4?.trim()) return;
+  try {
+    JSON.parse(text4);
+  } catch (e2) {
+    throw new Error(`${file2} isn't valid JSON (${e2.message}). Fix it and run again; nothing was translated or written.`);
+  }
+}
 function missingIn(catalog, locales2, current2, outdated) {
   const missing = /* @__PURE__ */ new Map();
   for (const locale of locales2) {
@@ -221191,6 +221378,7 @@ async function translateFiles(opts) {
     const sourceLocale = catalog.sourceLocale ?? opts.sourceLocale;
     const { locales: locales2, unsupported } = catalogLocales(catalog, sourceLocale, wanted);
     notes.push(...unsupported);
+    for (const locale of locales2) assertJson(catalog.targetFile(locale), current2(catalog.targetFile(locale)));
     const outdated = new Set(outdatedKeys(lock, catalog));
     const missing = missingIn(catalog, locales2, current2, outdated);
     summary2.push({ file: catalog.file, label: catalog.label, locales: locales2, missing: missing.size, outdated: outdated.size });
@@ -221271,7 +221459,7 @@ async function translateFiles(opts) {
           retry.push({ plan: job.plan, request: job.strings.find((r) => r.id === m2.id), entry, locale, problem });
           continue;
         }
-        const value = entry.masked.restore(raw);
+        const value = entry.masked.restore(markRightToLeft(raw, locale));
         if (value === null) {
           warnings2.push(`${job.plan.catalog.file}: dropped the ${locale} translation of "${entry.key}": its placeholders don't match the source (added, or unnamed ones reordered).`);
           continue;
@@ -221307,7 +221495,7 @@ async function translateFiles(opts) {
         const m2 = answers.get(r.request.id);
         const raw = m2?.plurals?.[r.locale] ? m2.plurals[r.locale] : m2?.translations[r.locale];
         const problem = translationProblem(r.entry.masked.value, raw, r.locale, { syntax: syntaxOf(plan.catalog) });
-        const value = problem ? null : r.entry.masked.restore(raw);
+        const value = problem ? null : r.entry.masked.restore(markRightToLeft(raw, r.locale));
         const plural = typeof r.entry.masked.value !== "string";
         if (value === null && r.empty && (!raw || plural && typeof raw === "string")) {
           warnings2.push(`${plan.catalog.file}: no ${r.locale} ${plural ? "plural forms" : "translation"} came back for "${displayKey(r.entry.key)}"; run translate again, or add it by hand.`);
@@ -221428,6 +221616,7 @@ var init_sync = __esm({
     init_placeholders();
     init_lock();
     init_validate();
+    init_rtl();
     FORMATS = [jsonFormat, textKeyedJsonFormat, yamlFormat, poFormat, arbFormat, androidFormat, ...appleFormats, chromeFormat];
     PATTERNS = ["**/*.{json,yml,yaml,po,arb,xcstrings}", "**/res/values*/*.xml", "**/composeResources/values*/*.xml", "**/*.lproj/*.strings", "**/_locales/*/messages.json"];
     IGNORE3 = [
@@ -221471,9 +221660,10 @@ function qwikHead(cwd, config) {
 function linesAsWritten(changes, original) {
   const from = /* @__PURE__ */ new Map();
   return changes.map((c) => {
-    const at2 = original.indexOf(c.before, from.get(c.before) ?? 0);
+    const before2 = original.includes(c.before) ? c.before : [...c.before.matchAll(/(?:toLocale\w*|Intl\.\w+Format)\([^,)]*/g)].map((m2) => m2[0]).find((f2) => original.includes(f2)) ?? c.before;
+    const at2 = original.indexOf(before2, from.get(before2) ?? 0);
     if (at2 === -1) return c;
-    from.set(c.before, at2 + 1);
+    from.set(before2, at2 + 1);
     return { ...c, line: original.slice(0, at2).split("\n").length };
   });
 }
@@ -221481,6 +221671,15 @@ function moneyOptions(cwd, config) {
   if (config.localizeFormats === false || !(!config.framework || config.framework === "react" || config.framework === "react-native" || config.framework === "solid")) return void 0;
   if (nextAppRouter(cwd, config)) return void 0;
   return { lang: config.framework === "solid" ? "i18n.language" : "i18next.language", currency: config.currency };
+}
+function templateMoney(config) {
+  if (config.localizeFormats === false) return void 0;
+  if (config.framework === "vue") return { lang: "$i18n.locale", currency: config.currency };
+  if (config.framework === "flutter") return { currency: config.currency };
+  return void 0;
+}
+function formatLang2(cwd, config) {
+  return config.localizeFormats !== false && nextAppRouter(cwd, config) ? "i18n.language" : void 0;
 }
 async function scanProject(cwd, config, log) {
   const root = path18.join(cwd, config.srcDir);
@@ -221520,7 +221719,7 @@ async function scanProject(cwd, config, log) {
     const adapter = await adapterFor(file2, config.framework);
     if (adapter) {
       try {
-        const result = await adapter.scan(code2, file2, { attributes: config.attributes, ...richOptions(cwd, config, file2) });
+        const result = await adapter.scan(code2, file2, { attributes: config.attributes, ...richOptions(cwd, config, file2), money: templateMoney(config) });
         warnings2.push(...result.warnings);
         if (result.strings.length) scanned.push({ file: file2, code: code2, strings: result.strings, server: false });
       } catch (err) {
@@ -221542,7 +221741,7 @@ async function scanProject(cwd, config, log) {
         if (!copy?.size) return null;
         return new Map([...copy].map(([name, c]) => [name, { kind: c.kind, fields: [...new Set(c.literals.map((l2) => l2.field))] }]));
       };
-      const result = parseAndScanComponent(code2, file2, { attributes: config.attributes, server, ordinals: config.interpolation === "i18next", sourceLocale: config.sourceLocale, importedCopy, qwikHead: qwikHead(cwd, config), richFunction: config.framework === "solid" || config.framework === "qwik", money: moneyOptions(cwd, config) });
+      const result = parseAndScanComponent(code2, file2, { attributes: config.attributes, server, ordinals: config.interpolation === "i18next", sourceLocale: config.sourceLocale, importedCopy, qwikHead: qwikHead(cwd, config), richFunction: config.framework === "solid" || config.framework === "qwik", money: moneyOptions(cwd, config), formatLang: formatLang2(cwd, config) });
       warnings2.push(...result.warnings);
       if (side === "shared" && !USE_CLIENT2.test(code2) && !makeClient && result.extractedStrings.length) {
         for (const str2 of result.extractedStrings) {
@@ -221655,6 +221854,15 @@ function richOptions(cwd, config, file2) {
   let spec2 = path18.posix.relative(path18.posix.dirname(file2), target);
   if (!spec2.startsWith(".")) spec2 = `./${spec2}`;
   return { richModule: spec2, ...svelteMajor(cwd) < 5 ? { richSlots: true } : {} };
+}
+function hasTestRunner(cwd) {
+  try {
+    const pkg = JSON.parse(fs18.readFileSync(path18.join(cwd, "package.json"), "utf8"));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    return "vitest" in deps || "jest" in deps;
+  } catch {
+    return false;
+  }
 }
 async function runPipeline(opts) {
   const { cwd, config, translator, log } = opts;
@@ -221771,6 +221979,8 @@ async function runPipeline(opts) {
   const set3 = (dict2, key2, value, where) => guard(() => setNested(dict2, key2, value), where);
   for (const { file: file2, code: code2, strings: strings2, server, makeClient, keep, copyModule, importedCopy } of scanned) {
     const keys = /* @__PURE__ */ new Map();
+    const inFile = /* @__PURE__ */ new Map();
+    const names3 = (s) => ACCESSIBLE_NAMES.has(s.attributeName ?? "");
     const selectBase = /* @__PURE__ */ new Map();
     const ordered = [...strings2].sort((a, b4) => Number(!!a.select && a.select.value !== null) - Number(!!b4.select && b4.select.value !== null));
     const plainKeys = new Set(
@@ -221788,7 +221998,8 @@ async function runPipeline(opts) {
         const same3 = keysByText.get(s.originalText)?.find(
           (k) => translationsAgree(Object.fromEntries([...targets].map(([l2, t10]) => [l2, getNested(t10.dict, k)])), fresh)
         );
-        if (same3) registry.alias(mid, same3);
+        const named2 = same3 ?? inFile.get(s.originalText)?.find((e2) => names3(s) || e2.name)?.key;
+        if (named2) registry.alias(mid, named2);
       }
       const base = variant && selectBase.has(variant.group) ? `${selectBase.get(variant.group)}_${variant.value}` : s.fixedKey ?? (store.textKeys ? textKeyOf(s) : mapping?.key ?? fallbackKey(file2, s.originalText));
       let proposed = s.keySuffix && !base.endsWith(s.keySuffix) ? `${base}${s.keySuffix}` : base;
@@ -221796,9 +222007,16 @@ async function runPipeline(opts) {
       const { key: key2, isNew } = s.fixedKey && registry.has(s.fixedKey) ? { key: s.fixedKey, isNew: false } : registry.register(proposed, s.fixedKey ? `${mid}\0${s.fixedKey}` : mid);
       if (s.select && s.select.value === null) selectBase.set(s.select.group, key2);
       if (isNew && !s.plural) keysByText.set(s.originalText, [...keysByText.get(s.originalText) ?? [], key2]);
+      if (!s.plural && !variant) inFile.set(s.originalText, [...inFile.get(s.originalText) ?? [], { key: key2, name: names3(s) }]);
       const write3 = (dict2, value, where) => typeof value === "string" ? set3(dict2, key2, toDictFormat(value, config.interpolation), where) : guard(() => writePlural(dict2, key2, value, config.interpolation, !!s.plural?.ordinal), where);
       if (isNew) {
         if (!write3(sourceDict, s.plural ?? s.originalText, sourcePath)) continue;
+        if (s.currencies && sourcePath.endsWith(".arb")) {
+          const placeholders = Object.fromEntries(
+            Object.entries(s.currencies).map(([name, c]) => [name, { type: "double", format: "simpleCurrency", optionalParameters: { name: c.code, ...c.digits === void 0 ? {} : { decimalDigits: c.digits } } }])
+          );
+          sourceDict[`@${key2}`] = { placeholders };
+        }
         stats.newKeys++;
       } else if (!keep) {
         stats.reusedKeys++;
@@ -221806,7 +222024,8 @@ async function runPipeline(opts) {
       keys.set(s.id, key2);
       if (s.stateDefault && !keep) stateDefaults.push({ file: file2, line: s.loc.line, text: s.originalText, key: key2 });
       for (const [locale, target] of targets) {
-        const value = s.plural ? withZero(mapping?.plurals?.[locale], s.plural, byText.get(`${translationId}\0=0`)?.translations[locale]) : mapping?.translations[locale];
+        const raw = s.plural ? withZero(mapping?.plurals?.[locale], s.plural, byText.get(`${translationId}\0=0`)?.translations[locale]) : mapping?.translations[locale];
+        const value = raw && markRightToLeft(raw, locale);
         const present = s.plural ? hasPlural(target.dict, key2, config.interpolation, !!s.plural?.ordinal) : getNested(target.dict, key2) !== void 0;
         if (value && (typeof value === "string" || value.other) && !present && write3(target.dict, value, target.path)) {
           stats.translations[locale] = (stats.translations[locale] ?? 0) + 1;
@@ -221846,7 +222065,8 @@ async function runPipeline(opts) {
       ...config.framework === "astro" ? { astroModule: relativeImport(file2, astroModulePath(cwd, config)).replace(/\/index$/, "") } : {},
       ...config.framework === "lit" ? { litModule: relativeImport(file2, solidModulePath(cwd, config)) } : {},
       ...config.framework === "android" ? { androidNamespace: androidNamespace(cwd) } : {},
-      ...richOptions(cwd, config, file2)
+      ...richOptions(cwd, config, file2),
+      money: templateMoney(config)
     }) : transformComponent(code2, file2, keys, {
       attributes: config.attributes,
       sourceLocale: config.sourceLocale,
@@ -221857,7 +222077,8 @@ async function runPipeline(opts) {
       serverModule: server ? relativeImport(file2, serverModulePath(cwd, config)) : void 0,
       importedCopy,
       qwikHead: qwikHead(cwd, config),
-      money: moneyOptions(cwd, config)
+      money: moneyOptions(cwd, config),
+      formatLang: formatLang2(cwd, config)
     });
     if (result.changed && config.framework === "astro" && /\.(tsx|jsx|svelte)$/.test(file2)) {
       result.code = withIslandImport(result.code, file2, relativeImport(file2, `${srcPrefix(config)}i18n/${file2.endsWith(".svelte") ? "svelte" : "react"}`));
@@ -221925,6 +222146,9 @@ ${result.code}`;
       setup.files.push(attributes2);
       setup.notes.push(`Locale files now merge key by key: run this once per clone (and in CI before merging) so git uses it: ${MERGE_DRIVER_SETUP}`);
     }
+  }
+  if (opts.setup !== false && hasTestRunner(cwd) && files.some((f2) => f2.content.includes("\\u2066") && !(fileText(f2.path) ?? "").includes("\\u2066"))) {
+    setup.notes.push("Prices are now wrapped in invisible isolate characters (\\u2066\u2026\\u2069) that keep them in order in right-to-left text: a test matching an exact text like 'Total: $48.00' needs a regex instead, such as /Total: .\\$48\\.00./.");
   }
   const allFiles = mergeFiles(files, setup.files).filter((f2) => {
     const abs = path18.join(cwd, f2.path);
@@ -222052,7 +222276,7 @@ async function refreshOutdated(o) {
     vuePlurals: vuePluralsIn2(o.cwd, o.config.interpolation)
   });
 }
-var import_fast_glob14, USE_CLIENT2, duration, toPosix3, BATCH_SIZE, CONCURRENCY, EMAIL_LIBRARIES, isEmailTemplate;
+var import_fast_glob14, USE_CLIENT2, duration, toPosix3, BATCH_SIZE, CONCURRENCY, EMAIL_LIBRARIES, isEmailTemplate, ACCESSIBLE_NAMES;
 var init_pipeline = __esm({
   "src/pipeline.ts"() {
     "use strict";
@@ -222077,6 +222301,7 @@ var init_pipeline = __esm({
     init_stores();
     init_dart();
     init_paths();
+    init_rtl();
     USE_CLIENT2 = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*(['"])use client\1/;
     duration = (ms) => {
       const s = Math.round(ms / 1e3);
@@ -222087,6 +222312,7 @@ var init_pipeline = __esm({
     CONCURRENCY = 2;
     EMAIL_LIBRARIES = /^(?:react-email|@react-email\/|jsx-email|mjml-react|@faire\/mjml-react)/;
     isEmailTemplate = (code2) => importSpecifiers(code2).some((s) => EMAIL_LIBRARIES.test(s));
+    ACCESSIBLE_NAMES = /* @__PURE__ */ new Set(["aria-label", "accessibilityLabel"]);
   }
 });
 
@@ -222614,6 +222840,7 @@ var CloudError = class extends Error {
   }
   status;
 };
+var SIGN_UP_URL = `${DEFAULT_API_URL}/sign-up`;
 var BUSY = /* @__PURE__ */ new Set([429, 503]);
 var BUSY_ATTEMPTS = 10;
 var MAX_WAIT_MS = 6e4;
@@ -222829,6 +223056,19 @@ function startWatchdog(minutes) {
 // src/github/pr_bot.ts
 init_merge_locales();
 init_paths();
+var INLINE_LIMIT = 32 * 1024;
+async function mapLimit(items, limit, fn2) {
+  const results = new Array(items.length);
+  let next2 = 0;
+  const worker = async () => {
+    while (next2 < items.length) {
+      const i3 = next2++;
+      results[i3] = await fn2(items[i3]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 async function createLocalizationPullRequest(params) {
   const github = client(params.githubToken, params.baseUrl);
   const repo = `/repos/${params.owner}/${params.repo}`;
@@ -222844,10 +223084,12 @@ async function createLocalizationPullRequest(params) {
   );
   const files = new Map(params.changedFiles.map((f2) => [repoPath(f2.path), f2.content]));
   const edits = branchSha ? await keepEdits(github, repo, baseSha, branchSha, files) : { kept: [], replaced: [] };
-  const tree = await github("POST", `${repo}/git/trees`, {
-    base_tree: baseCommit.tree.sha,
-    tree: [...files].map(([path23, content]) => ({ path: path23, mode: "100644", type: "blob", content }))
-  });
+  const entries = await mapLimit(
+    [...files],
+    4,
+    async ([path23, content]) => Buffer.byteLength(content) > INLINE_LIMIT ? { path: path23, mode: "100644", type: "blob", sha: (await github("POST", `${repo}/git/blobs`, { content, encoding: "utf-8" })).sha } : { path: path23, mode: "100644", type: "blob", content }
+  );
+  const tree = await github("POST", `${repo}/git/trees`, { base_tree: baseCommit.tree.sha, tree: entries });
   const commit = await github("POST", `${repo}/git/commits`, {
     message: params.commitMessage ?? `i18n(localize.dev): extract UI strings into translation keys`,
     tree: tree.sha,
@@ -223678,11 +223920,12 @@ function buildPrTitle(result, branch) {
 function filledCount(result) {
   return (result.filled ?? []).reduce((n4, f2) => ({ filled: n4.filled + f2.keys.length, redone: n4.redone + f2.redone.length }), { filled: 0, redone: 0 });
 }
+var HEADING = "## \u{1F30D} [localize.dev](https://uselocalize.dev/?utm_source=github&utm_medium=pr)";
 function buildPrBody(result, targetLocales) {
   const { stats } = result;
   if (!stats.stringsReplaced && !stats.formatsLocalized && result.setup.switcherFile) {
     return [
-      "## \u{1F30D} localize.dev",
+      HEADING,
       "",
       `Adds \`<LanguageSwitcher />\` in \`${result.setup.switcherFile}\`: a menu of every bundled language, each in its own name.`,
       "Render it where people pick a language, such as your header. No strings changed in this run."
@@ -223691,7 +223934,7 @@ function buildPrBody(result, targetLocales) {
   const translations = Object.values(stats.translations).reduce((n4, c) => n4 + c, 0);
   const keys = stats.stringsReplaced || stats.newKeys || translations;
   const lines = [
-    "## \u{1F30D} localize.dev",
+    HEADING,
     "",
     ...stats.stringsReplaced || stats.newKeys ? [`Extracted **${stats.stringsReplaced}** hardcoded UI string(s) into translation keys (${stats.newKeys} new, ${stats.reusedKeys} reused).`, ""] : !keys && stats.formatsLocalized ? [`No new strings in this run; ${stats.formatsLocalized} date, number or money format(s) now follow the app's language.`, ""] : [],
     ...result.incomplete ? [
@@ -223759,7 +224002,7 @@ function buildPrBody(result, targetLocales) {
 function buildTranslatePrBody(result) {
   const locales2 = Object.keys(result.stats.translations).sort();
   const lines = [
-    "## \u{1F30D} localize.dev",
+    HEADING,
     "",
     `Filled in **${result.stats.strings}** missing translation(s) in ${result.files.length} file(s). Existing translations and code are unchanged.`,
     "",
